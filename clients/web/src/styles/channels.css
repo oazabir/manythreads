@@ -2290,8 +2290,9 @@
 
 /*
  * Compact density (P21-21, B8): the number tokens of tokens.css cut the gaps; these rows cut the line itself, so a long run of short messages takes at most
- * 70% of the height it has in Comfortable. A message that continues the run above has no avatar and no name (the column stays empty so its text lines up
- * with the first line, and its time shows there on hover). Chat and the Threads inbox use their own classes and are not touched.
+ * 70% of the height it has in Comfortable (P34-01 gave the lines of a run 4 px in Comfortable and 2 px in Compact, and the run stopped fitting: in Compact the lines
+ * of a run touch, e2e/channels/phone-channel.spec.ts). A message that continues the run above has no avatar and no name (the column stays empty so its text lines
+ * up with the first line, and its time shows there on hover). Chat and the Threads inbox use their own classes and are not touched.
  */
 :root[data-density="compact"] .msg .who {
   margin-bottom: 0;
@@ -2299,14 +2300,14 @@
 }
 
 :root[data-density="compact"] .msg .txt {
-  --lh: 19px;
+  --lh: 18px;
 
   line-height: var(--lh);
 }
 
 :root[data-density="compact"] .msg .run-time {
   padding-top: 0;
-  line-height: 19px;
+  line-height: 18px;
   white-space: nowrap;
 }
 

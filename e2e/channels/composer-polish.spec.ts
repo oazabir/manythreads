@@ -4,10 +4,11 @@ import { addBot, brainMd, conversationStackEnv } from '../conversations/support.
 import { PHONE, apiOn, noSidewaysScroll, openOn, type StackApi } from '../support/stack-browser.ts';
 
 /*
- * PLAN P21-04 (what the first batch left): the composer of a channel checked on a desktop and on a 390 px phone. The toolbar keeps its height and its place
- * when the box gets the cursor and text (nothing jumps under the reader's thumb), ":smi" opens the emoji list and Tab takes the first one, "@" lists people with
- * a picture and a handle, a long bot name is cut with an ellipsis on one line and keeps its handle in full, the Send control sleeps until there is text, "#"
- * lists channels, and the Ctrl/Cmd chords format the selection. Starts its own stack with one bot whose name is far longer than a row.
+ * PLAN P21-04 (what the first batch left): the composer of a channel checked on a desktop and on a 390 px phone. The text line and the Attach button keep their
+ * height and their place when the box gets the cursor (the formatting bar is added above them, P37-01) and a first word (nothing jumps under the reader's thumb),
+ * ":smi" opens the emoji list and Tab takes the first one, "@" lists people with a picture and a handle, a long bot name is cut with an ellipsis on one line and
+ * keeps its handle in full, the Send control sleeps until there is text, "#" lists channels, and the Ctrl/Cmd chords format the selection. Starts its own stack
+ * with one bot whose name is far longer than a row.
  */
 test.use({ actionTimeout: 10_000 });
 test.describe.configure({ mode: 'serial' });
@@ -40,26 +41,39 @@ const place = async (loc: Locator): Promise<{ y: number; h: number }> => {
   return { y: Math.round(b?.y ?? -1), h: Math.round(b?.height ?? -1) };
 };
 
-test('the box and its Attach button keep their height and place when the box gets the cursor and a first word', async ({ browser, playwright, isMobile }) => {
+test('the box and its Attach button keep their height and place when the box gets the cursor and a first word; the formatting bar is a row above them', async ({ browser, playwright, isMobile }) => {
   const { page, context } = await open(browser, playwright, 'nadia', isMobile);
   try {
-    // the formatting bar is hidden until asked for (P36-09); the Attach button is what sits beside the text at rest
-    const bar = page.getByTestId('composer-attach');
+    // At rest the composer is the text line with Attach beside it. Since P37-01 the formatting bar shows while focus is inside the composer: it is a row added at the top of
+    // the box, so the box grows upward by that row and everything under it (the text line, the Attach button) keeps its own height and its distance from the box's bottom.
+    const attach = page.getByTestId('composer-attach');
     const cbox = page.locator('.composer .cbox');
-    await expect(bar).toBeVisible();
-    // On the phone the bottom bar steps aside while a text box has the focus (the keyboard is up), so the whole composer slides down by the bar's
-    // height once; what must hold is the composer's own shape: its heights and the gap between the Attach button and the box. On a desktop nothing moves at all.
-    const shape = async (): Promise<{ bar: { y: number; h: number }; box: { y: number; h: number }; gap: number }> => {
-      const [b, x] = [await place(bar), await place(cbox)];
-      return { bar: b, box: x, gap: b.y - x.y };
+    const tools = page.getByTestId('composer-tools');
+    await expect(attach).toBeVisible();
+    await expect(tools, 'no formatting bar at rest').toHaveCount(0);
+    // On the phone the bottom bar steps aside while a text box has the focus (the keyboard is up), so the whole composer slides down by the bar's height once; what must
+    // hold is the composer's own shape. On a desktop the composer's bottom edge stays where it is, so the text line and Attach do not move at all.
+    type Shape = { box: { y: number; h: number }; attach: { y: number; h: number }; text: { y: number; h: number }; attachFromBottom: number; textFromBottom: number };
+    const shape = async (): Promise<Shape> => {
+      const [x, a, t] = [await place(cbox), await place(attach), await place(boxOf(page))];
+      return { box: x, attach: a, text: t, attachFromBottom: x.y + x.h - (a.y + a.h), textFromBottom: x.y + x.h - (t.y + t.h) };
     };
-    const own = (s: Awaited<ReturnType<typeof shape>>): unknown => ({ barH: s.bar.h, boxH: s.box.h, gap: s.gap });
+    const own = (s: Shape): unknown => ({ attachH: s.attach.h, textH: s.text.h, attachFromBottom: s.attachFromBottom, textFromBottom: s.textFromBottom });
     const before = await shape();
     await boxOf(page).click();
     await expect(boxOf(page)).toBeFocused();
+    await expect(tools, 'the formatting bar shows with the cursor in the box').toBeVisible();
     const settled = await shape();
-    expect(own(settled), 'focus changes no height and no gap').toEqual(own(before));
-    if (!isMobile) expect(settled, 'focus moves nothing on a desktop').toEqual(before);
+    expect(own(settled), 'the text line and Attach keep their height and their place in the box').toEqual(own(before));
+    // the bar is one row above the text, and it is the whole of what the box grew by
+    const bar = await place(tools);
+    expect(bar.y + bar.h, 'the bar sits above the text line').toBeLessThanOrEqual(settled.text.y);
+    expect(Math.abs(settled.box.h - before.box.h - bar.h), 'the box grew by the bar and nothing else').toBeLessThanOrEqual(2);
+    if (!isMobile) {
+      expect(settled.attach, 'Attach does not move on a desktop').toEqual(before.attach);
+      expect(settled.text, 'the text line does not move on a desktop').toEqual(before.text);
+      expect(settled.box.y + settled.box.h, 'the box grows upward: its bottom edge stays').toEqual(before.box.y + before.box.h);
+    }
     await boxOf(page).pressSequentially('first');
     const typed = await shape();
     expect(typed, 'one line of text moves nothing').toEqual(settled);

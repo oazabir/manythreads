@@ -166,9 +166,9 @@ describe('the CSS the rhythm rests on', () => {
     expect(rule(css, '.msg')).toMatch(/padding: var\(--msg-pad-y\) 8px var\(--run-pad\)/);
     expect(rule(css, '.msg.run')).toMatch(/padding-top: var\(--run-pad\)/);
     expect(css).toMatch(/--run-pad: calc\(var\(--run-gap\) \/ 2\)/);
-    // comfortable: 4 px between two lines of a run; compact: 2 px
+    // comfortable: 4 px between two lines of a run; compact: none, so a run of short messages stays within 70% of Comfortable (phone-channel.spec.ts)
     expect(tokens).toMatch(/--run-gap: 4px;/);
-    expect(tokens).toMatch(/:root\[data-density="compact"\][^}]*--run-gap: 2px;/);
+    expect(tokens).toMatch(/:root\[data-density="compact"\][^}]*--run-gap: 0px;/);
   });
 
   it('the floating day pill sits on a solid band; Show more is a block; the fade covers one line; prose breaks words only when it must', () => {

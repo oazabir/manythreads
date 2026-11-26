@@ -51,7 +51,8 @@ test('the menu opens on a slash at the start, is driven by the keyboard, and nev
     const list = menu(page);
     await expect(list).toBeVisible();
     await expect(list).toHaveAttribute('role', 'listbox');
-    await expect(list.getByRole('option')).toHaveCount(14);
+    // the platform's list (packages/shared/src/commands): 14 at first, 15 with /incident (P35-07)
+    await expect(list.getByRole('option')).toHaveCount(15);
     await expect(list.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
     await expect(input).toHaveAttribute('aria-expanded', 'true');
 
