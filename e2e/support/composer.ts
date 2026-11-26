@@ -25,11 +25,16 @@ export async function chooseAttach(composer: Locator, testId: string): Promise<v
   await menu.getByTestId(testId).click();
 }
 
-/** Shows the formatting bar of `composer` (it shows by itself while the person is in the box; this pins it from the Attach menu, kept in the browser) and returns it. */
+/**
+ * Pins the formatting bar of `composer` from the Attach menu ("Show formatting", kept in the browser) and returns it. Since P37-01 the bar also shows by itself while the
+ * person is in the box or the box has text, so "visible" does not tell whether it is pinned: this reads the menu item and presses it only while it says "Show formatting".
+ */
 export async function showFormatting(composer: Locator): Promise<Locator> {
   const bar = composer.getByRole('toolbar', { name: 'Formatting' });
-  if (await bar.isVisible()) return bar;
-  await chooseAttach(composer, 'composer-format-toggle');
+  const menu = await openAttach(composer);
+  const toggle = menu.getByTestId('composer-format-toggle');
+  if (((await toggle.textContent()) ?? '').includes('Show formatting')) await toggle.click();
+  else await composer.page().keyboard.press('Escape');
   await expect(bar).toBeVisible();
   return bar;
 }

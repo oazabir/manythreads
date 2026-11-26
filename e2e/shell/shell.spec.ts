@@ -8,7 +8,7 @@ import { authState } from '../support/env.ts';
  */
 
 const sidebarRows = async (page: import('@playwright/test').Page): Promise<string[]> =>
-  page.locator('[data-landmark="sidebar"] > .it, [data-landmark="sidebar"] > .sec-row').allInnerTexts().then((rows) => rows.map((r) => r.split('\n')[0]!.trim()));
+  page.locator('[data-landmark="sidebar"] > .it, [data-landmark="sidebar"] > .sec-row').allInnerTexts().then((rows) => rows.map((r) => r.split('\n')[0]!.trim().replace(/(No projects yet)$/, '')));
 
 // channels are real now: the URL names a channel the directory lists (a made-up name is "You cannot see this channel.")
 let dev = '';
@@ -27,7 +27,7 @@ test.describe('Nadia, a member', () => {
     const sidebar = page.locator('[data-landmark="sidebar"]');
     await expect(sidebar).toBeVisible();
     // the rows arrive once the team list has loaded
-    await expect.poll(() => sidebarRows(page)).toEqual(['Chat', 'Files', 'Boards', 'Org chart', 'Jobs', 'Threads', 'Approvals', 'Direct messages', 'Bots']);
+    await expect.poll(() => sidebarRows(page)).toEqual(['Summaries', 'Chat', 'Schedule', 'Files', 'Boards', 'Org chart', 'Jobs', 'Deliveries', 'Threads', 'Drafts', 'Approvals', 'Direct messages', 'Projects', 'Bots']);
     await expect(sidebar).not.toContainText('No files yet');
     // Files and Boards are built screens: their sidebar rows carry no "nothing here" subtitle.
     await expect(sidebar).not.toContainText('No boards yet');

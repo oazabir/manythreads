@@ -100,13 +100,11 @@ test('on a phone the cards stack in one column with no sideways scroll', async (
   }
 });
 
-test('the foot lists the threads the person opened: empty at first, then a row that opens the thread', async ({ browser, playwright, isMobile }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/', isMobile ? { viewport: PHONE, mobile: true } : {});
+test('the foot lists the threads the person opened: empty at first, then a row that opens the thread where it lives', async ({ browser, playwright, isMobile }) => {
+  // straight to the page: the Threads home opens its first thread on a wide screen, which would already be noted as opened
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/summaries', isMobile ? { viewport: PHONE, mobile: true } : {});
   try {
-    await page.goto('/');
-    await expect(page).toHaveURL(/\/t\/[^/]+\//);
-    const team = new URL(page.url()).pathname.split('/')[2] ?? '';
-    await page.goto(`/t/${team}/summaries`);
+    const team = 'engineering';
     const foot = page.getByTestId('summaries-recent-threads');
     // it is a section of its own, below the five cards, and not one of them
     await expect(foot).toBeVisible();
@@ -121,20 +119,23 @@ test('the foot lists the threads the person opened: empty at first, then a row t
     await page.goto(`/t/${team}/threads`);
     const first = page.getByTestId('thread-row').first();
     await expect(first).toBeVisible();
-    const rootId = await first.getAttribute('data-root-id');
+    const rootId = (await first.getAttribute('data-root-id'))!;
     await first.click();
     await expect(page.getByTestId('thread-view').first()).toBeVisible();
+    // the thread is noted in this browser once it has loaded (per person and team); leave only after that
+    await expect.poll(() => page.evaluate(() => Object.entries(localStorage).filter(([k]) => k.startsWith('manythreads.recentThreads.')).map(([, v]) => v).join('')), { timeout: 15_000 }).toContain(rootId);
     await page.goto(`/t/${team}/summaries`);
     const row = foot.getByTestId('summaries-row').first();
     await expect(row).toBeVisible();
     await expect(row).toContainText(/Opened (just now|\d+ minutes? ago)/);
-    await expect(row.locator('a.sm-row-link')).toHaveAttribute('href', new RegExp(`/threads\\?thread=${rootId}$`));
+    // the row opens the thread in its own place (channel, direct message, chat with a bot or meeting chat), not on the Threads page
+    await expect(row.locator('a.sm-row-link')).toHaveAttribute('href', new RegExp(rootId));
     expect(await foot.getByTestId('summaries-row').count()).toBeLessThanOrEqual(10);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
     await row.locator('a.sm-row-link').click();
-    await expect(page).toHaveURL(new RegExp(`/threads\\?thread=${rootId}`));
-    await expect(page.getByTestId('thread-view').first()).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(rootId));
+    await expect(page.getByTestId('thread-view').or(page.getByTestId('chat-column')).first()).toBeVisible();
   } finally {
     await context.close();
   }
