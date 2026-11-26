@@ -15,7 +15,6 @@ import { MENU_SCOPE, onMenuKeys } from './menuNav';
 import { useDismiss } from './useDismiss';
 import { useNarrow } from './useNarrow';
 import { useBookmarkTotal } from '../bookmarks/store';
-import { CORE_NAV, navHref } from './nav';
 
 type AccountDialog = 'status' | 'pause' | 'picture';
 
@@ -51,11 +50,11 @@ function AccountItems({ done, openDialog, leave }: { done: () => void; openDialo
   const { guest, team, teamSlug } = useShell();
   const dnd = useMyDnd();
   const narrow = useNarrow();
-  // on a phone the You sheet has Bookmarks too (P36-08), while the person has one, as the drawer does (the shell's counts load the store)
+  // on a phone the You sheet has Bookmarks too (P36-08), while the person has one: the full page, which the header button's panel also links to as "Open as a page"
+  // (P37-08; the sidebar entry it once copied is gone). The header button loads the store.
   const bookmarks = useBookmarkTotal();
-  // the sidebar's own entry, so the sheet and the drawer lead to the same place (a guest's shell takes any slug in the address, else the guests' `shared`)
-  const bookmarksEntry = CORE_NAV.find((i) => i.id === 'bookmarks');
-  const bookmarksHref = bookmarksEntry ? navHref(bookmarksEntry, team?.slug ?? teamSlug ?? 'shared') : null;
+  // the team in sight; a guest's shell takes any slug in the address, else the guests' `shared` (as bookmarks/useBookmarksSlug.ts, which this file does not import: it pulls in the whole composer)
+  const bookmarksHref = `/t/${encodeURIComponent(team?.slug ?? teamSlug ?? 'shared')}/bookmarks`;
   const [appearance, setAppearance] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   // on a phone the Appearance submenu takes the place of the rows (with a Back row); on a wide screen it is a flyout and the rows stay
@@ -75,7 +74,7 @@ function AccountItems({ done, openDialog, leave }: { done: () => void; openDialo
               <Link role="menuitem" className="menu-item" to="/account/notifications#status-and-dnd" onClick={done}>Do not disturb settings</Link>
             </>
           ) : null}
-          {narrow && bookmarks > 0 && bookmarksHref ? <Link role="menuitem" className="menu-item" to={bookmarksHref} data-testid="menu-bookmarks" onClick={done}>Bookmarks</Link> : null}
+          {narrow && bookmarks > 0 ? <Link role="menuitem" className="menu-item" to={bookmarksHref} data-testid="menu-bookmarks" onClick={done}>Bookmarks</Link> : null}
           {guest ? null : <Link role="menuitem" className="menu-item" to="/memory" data-testid="menu-my-memory" onClick={done}>Your memory</Link>}
           {guest ? null : <Link role="menuitem" className="menu-item" to="/knowledge" data-testid="menu-my-knowledge" onClick={done}>Your knowledge</Link>}
           {guest ? null : <Link role="menuitem" className="menu-item" to="/teams" onClick={done}>Teams</Link>}

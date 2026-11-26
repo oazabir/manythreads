@@ -332,7 +332,7 @@
 :root[data-density="compact"][data-palette] {
   --msg-pad-y: 3px;
   --msg-gap: 2px;
-  --run-gap: 2px;
+  --run-gap: 0px;
   --av-size: 28px;
   --gutter-w: 28px;
   --day-gap: 4px;

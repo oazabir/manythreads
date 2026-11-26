@@ -101,6 +101,13 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const names = useMemo(() => feed.groups.flatMap((g) => g.channels.map((c) => c.name.replace(/^#/, ''))), [feed.groups]);
   const typing = useTyping(threadKey(rootId));
   const scroller = useRef<HTMLDivElement>(null);
+  // Where the last pin to the newest reply left the list: the scroll event that pin causes carries this position. If the replies grew after the pin (a row drawn a
+  // moment later), that event finds the list a little above the bottom; it is ours, not the reader leaving, so the list is pinned again instead of showing the pill.
+  const pinnedTop = useRef(-1);
+  const pin = useCallback((el: HTMLElement) => {
+    el.scrollTop = el.scrollHeight;
+    pinnedTop.current = el.scrollTop;
+  }, []);
   // Whether the reader is at the newest reply. The ref is read by the pin effect; the state draws the "Jump to latest" pill. One setter
   // keeps them together and bails out when nothing changed, so scrolling does not re-render the thread per frame.
   const stuckRef = useRef(true);
@@ -205,7 +212,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   useLayoutEffect(() => {
     if (stuckRef.current) newestRef.current = newestReply;
     const el = scroller.current;
-    if (el && stuckRef.current) el.scrollTop = el.scrollHeight;
+    if (el && stuckRef.current) pin(el);
   });
 
   // the dock above the composer appears and folds, which resizes the list: a reader at the newest reply stays there
@@ -223,12 +230,22 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     if (!listDrawn) return;
     const el = scroller.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
+    // the list's own size (the dock folds) and its rows' sizes (a row drawn taller a moment after the pin)
     const ro = new ResizeObserver(() => {
-      if (stuckRef.current) el.scrollTop = el.scrollHeight;
+      if (stuckRef.current) pin(el);
     });
     ro.observe(el);
-    return () => ro.disconnect();
-  }, [listDrawn]);
+    const watchRows = (): void => {
+      for (const row of el.children) ro.observe(row);
+    };
+    watchRows();
+    const rows = new MutationObserver(watchRows);
+    rows.observe(el, { childList: true });
+    return () => {
+      ro.disconnect();
+      rows.disconnect();
+    };
+  }, [listDrawn, pin]);
 
   const rootActions = useMemo<RowActions | null>(
     () =>
@@ -332,8 +349,13 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       tabIndex={variant === 'panel' ? -1 : undefined}
       onScroll={(e) => {
         const el = e.currentTarget;
-        setStuck(atBottom(el.scrollHeight - el.scrollTop - el.clientHeight));
         setAwayFromTop(el.scrollTop > Math.min(240, el.clientHeight / 2));
+        if (stuckRef.current && el.scrollTop === pinnedTop.current && el.scrollHeight - el.scrollTop - el.clientHeight > 0) {
+          pin(el);
+          return;
+        }
+        pinnedTop.current = -1;
+        setStuck(atBottom(el.scrollHeight - el.scrollTop - el.clientHeight));
       }}
     >
       <div className="root">
