@@ -177,6 +177,16 @@ describe('an answer in a call stays inside the channels everybody present may re
     expect(await readStayedInside(tx(one, { message: {} }), ID(9), channels)).toBe(false);
   });
 
+  it('fails a meeting of another channel, and one that has no channel (P38-08)', async () => {
+    const line = [{ source_type: 'meeting', source_ref: ID(12), scope: 'channel' }];
+    expect(await readStayedInside(tx(line, { meeting: { [ID(12)]: ID(3) } }), ID(9), channels)).toBe(false);
+    expect(await readStayedInside(tx(line, { meeting: { [ID(12)]: null } }), ID(9), channels)).toBe(false);
+    // one outside line among inside ones fails the whole run
+    const mixed = [...line, { source_type: 'meeting', source_ref: ID(13), scope: 'channel' }];
+    expect(await readStayedInside(tx(mixed, { meeting: { [ID(12)]: ID(1), [ID(13)]: ID(3) } }), ID(9), channels)).toBe(false);
+    expect(await readStayedInside(tx(mixed, { meeting: { [ID(12)]: ID(1), [ID(13)]: ID(2) } }), ID(9), channels)).toBe(true);
+  });
+
   it('fails for a person\'s own space, a kind it cannot place, and a reference that is not an id', async () => {
     expect(await readStayedInside(tx([{ source_type: 'message', source_ref: ID(10), scope: 'person' }], { message: { [ID(10)]: ID(1) } }), ID(9), channels)).toBe(false);
     expect(await readStayedInside(tx([{ source_type: 'memory', source_ref: 'bank/x', scope: 'team' }], {}), ID(9), channels)).toBe(false);

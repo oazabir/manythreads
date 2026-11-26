@@ -49,7 +49,11 @@ const botLines = (stack: Stack) =>
     `SELECT m.body FROM app.messages m JOIN app.actors a ON a.id = m.author_id WHERE m.thread_root_id = $1 AND m.id <> $1 AND a.kind = 'bot' ORDER BY m.id`,
     [threadRootId],
   );
-const questionRuns = (stack: Stack) => stack.sql<{ status: string }>(`SELECT status FROM app.bot_runs WHERE trigger_type = 'meeting_question' ORDER BY started_at, id`);
+const questionRuns = (stack: Stack) => stack.sql<{ id: string; status: string }>(`SELECT id, status FROM app.bot_runs WHERE trigger_type = 'meeting_question' ORDER BY started_at, id`);
+/** The tools a run called through the gateway's door (one `run_decisions` line each) and the sources it read (`run_source_log`). */
+const toolsOf = async (stack: Stack, runId: string): Promise<string[]> =>
+  (await stack.sql<{ subject: string }>(`SELECT subject FROM app.run_decisions WHERE run_id = $1 AND kind = 'tool' ORDER BY seq`, [runId])).map((r) => r.subject);
+const sourcesOf = (stack: Stack, runId: string) => stack.sql<{ source_type: string; source_ref: string }>(`SELECT source_type, source_ref FROM app.run_source_log WHERE run_id = $1 ORDER BY seq`, [runId]);
 
 test('a call with the note-taker: Nadia and Rafi say yes, Priya says no', async ({ request }) => {
   const stack = await iso.start();
@@ -57,7 +61,9 @@ test('a call with the note-taker: Nadia and Rafi say yes, Priya says no', async 
   expect(note).toBeDefined();
   botId = (await stack.sql<{ id: string }>(`SELECT id FROM app.bots WHERE slug = 'note-taker' AND status = 'active'`))[0]!.id;
   botActor = (await stack.sql<{ id: string }>(`SELECT id FROM app.actors WHERE kind = 'bot' AND ref_id = $1`, [botId]))[0]!.id;
-  channel = await channelId(request, 'general');
+  // the call is in #dev, where the seeded stand-up was held: since P17-06 a run in a call is only shown hits of the call's own channel, so a question about the stand-up
+  // is "inside" only for a call in #dev (in #general the stand-up is outside the room and its hits are held back, P38-08)
+  channel = await channelId(request, 'dev');
 
   const start = await request.post(`/api/channels/${channel}/meetings`, { headers: as(nadia), data: { title: 'Guards check' } });
   expect(start.status(), await start.text()).toBe(200);
@@ -139,20 +145,31 @@ test('a question that needs a channel not everybody in the call may read is not 
   await ask('@Note-taker SEARCH-MEETINGS rollback note? what did the stand-up say');
   await expect.poll(async () => (await botLines(stack)).some((l) => /ship on thursday/i.test(l.body)), { timeout: 90_000, message: 'the answer from what everyone may read' }).toBe(true);
   expect((await questionRuns(stack)).slice(before).map((r) => r.status)).toEqual(['done']);
+  // the run's own log says what it read: the stand-up (a meeting of #dev, the call's channel), and the search was made through the door (one `meetings.search` line)
+  const insideRun = (await questionRuns(stack)).at(-1)!;
+  expect(await toolsOf(stack, insideRun.id), 'tools of the inside run').toContain('meetings.search');
+  const insideRows = await sourcesOf(stack, insideRun.id);
+  expect(insideRows.map((l) => l.source_type), 'sources of the inside run').toContain('meeting');
+  const standup = await stack.sql<{ id: string }>(`SELECT id FROM app.meetings WHERE title = 'Engineering stand-up'`);
+  const meetingRefs = insideRows.filter((l) => l.source_type === 'meeting').map((l) => l.source_ref);
+  expect(meetingRefs).toContain(standup[0]!.id);
+  // and every meeting it read is one of the call's own channel (#dev)
+  const readIn = await stack.sql<{ channel_id: string }>(`SELECT channel_id FROM app.meetings WHERE id = ANY ($1::uuid[])`, [meetingRefs]);
+  expect(readIn.every((m) => m.channel_id === channel)).toBe(true);
 
   // outside: the leads sync is in #eng-leads, which Nadia reads and Priya and Rafi do not
   const runs = (await questionRuns(stack)).length;
   await ask('@Note-taker SEARCH-MEETINGS hiring plan? what did the leads decide');
   await expect.poll(async () => (await questionRuns(stack)).length, { timeout: 90_000, message: 'the second run' }).toBe(runs + 1);
-  // since P17-06 the run's searches are held to the call's own channel before they read, so the model finds nothing in #eng-leads and the run may close as done (it says it has
-  // no answer) instead of failing at the after-the-fact check; either way it is closed, and nothing the leads said (the autumn hiring plan of seed v15) is posted anywhere
+  // since P17-06 the run's searches are held to the call's own channel BEFORE they read: the search is made, finds the leads sync, and the door drops the hit before the model or
+  // the log sees it. The run closes as done (the model says it found nothing) and nothing the leads said (the autumn hiring plan of seed v15) is posted anywhere
   await expect.poll(async () => (await questionRuns(stack)).at(-1)?.status, { timeout: 60_000, message: 'the run to be closed' }).toMatch(/^(done|failed)$/);
   expect((await botLines(stack)).some((l) => /autumn/i.test(l.body))).toBe(false);
   const leaked = await stack.sql<{ n: string }>(`SELECT count(*)::text AS n FROM app.messages WHERE body ILIKE '%hiring plan for the autumn%'`);
   expect(leaked[0]?.n).toBe('0');
-  // The run's own log (app.run_source_log) should say what it read: for the outside question no meeting, for the inside one a meeting. Since P17-06 both logs are empty on this
-  // stack (the answer arrives, the log has no rows). Tracked as P38-08 (is the log no longer written for a meeting question, or is the stand-in model answering without the search?);
-  // until it is answered this half is skipped so the guard above (nothing from #eng-leads is posted) stays a hard check.
-  const outsideRows = await stack.sql<{ source_type: string }>(`SELECT l.source_type FROM app.run_source_log l WHERE l.run_id = (SELECT r.id FROM app.bot_runs r WHERE r.trigger_type = 'meeting_question' ORDER BY r.started_at DESC, r.id DESC LIMIT 1)`);
-  expect(outsideRows.map((l) => l.source_type), 'sources of the outside run').not.toContain('meeting');
+  // the outside run did search (so an empty log is the hold's doing, not a search that never ran), and its log has no meeting at all
+  const outsideRun = (await questionRuns(stack)).at(-1)!;
+  expect(await toolsOf(stack, outsideRun.id), 'tools of the outside run').toContain('meetings.search');
+  expect((await sourcesOf(stack, outsideRun.id)).map((l) => l.source_type), 'sources of the outside run').not.toContain('meeting');
+  expect((await botLines(stack)).at(-1)?.body ?? '', 'what the model said when the room had nothing').toMatch(/found nothing/i);
 });

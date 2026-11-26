@@ -163,7 +163,11 @@ plugin's door (`app.run_source_log_append`, migration 0004, serialised per run b
 because a bot actor cannot see its own run's lines under the table's SELECT policy — parallel tool calls take consecutive positions, and the append policy's
 `run_id = app.run_id()` is what keeps one run out of another's log. That is what the Answer surface's "Sources
 reached" and the retention rule — a run retains memory no wider than the narrowest source it read (SPEC §12.1) — read
-later. What the gateway does **not** log is the query itself or anything a stub touched, because neither is a source.
+later. A run that answers a question in a live call (trigger `meeting_question`) has its searches of messages, files and meetings held to the call's own channel
+before anything is logged or shown: the line is written from the hits that are left, so a meeting of another channel never gets a line, and a search that found only
+hits of other channels leaves no line (an empty log for such a run means "the room had nothing", not "no search was made"; the search itself is a `tool` line in `run_decisions`).
+The hold fails closed (a run with no channel recorded is shown no hits), and a hit and its log line are written in one transaction, so a hit cannot reach the model without
+its line. The meetings plugin's `readStayedInside` check after the answer stays as the second lock. What the gateway does **not** log is the query itself or anything a stub touched, because neither is a source.
 
 ## What the run decided (P7-07)
 

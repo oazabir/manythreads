@@ -1,6 +1,7 @@
 import type { BotRunHandle, PluginContext } from '@manythreads/sdk';
 import { RunEndedError } from '@manythreads/sdk';
 import { describe, expect, it } from 'vitest';
+import { TOOLS } from '../src/catalog.ts';
 import { MEETING_RUN_TOOL_CALLS, MEETING_RUN_TOOLS, ROOM_SCOPED_READS, keepRoomHits, meetingBudgetSentence, meetingRunRefusal, meetingToolBudgetUsed, widenForRoom } from '../src/meeting-runs.ts';
 
 // P17-06: a run that answers in a live call is held to the room BEFORE it reads (meeting-runs.ts): only searches, memory and knowledge are offered, a search of
@@ -68,6 +69,21 @@ describe('a search of a run in a call', () => {
     const refused = { ok: false, code: 'forbidden', message: 'no' };
     expect(keepRoomHits(refused, ROOM, 10)).toBe(refused);
     expect(keepRoomHits(null, ROOM, 10)).toBeNull();
+  });
+  // P38-08: what the door logs is what the model was shown, after the hold. A call in one channel logs the meetings of that channel and never one that was held back; a
+  // call whose own channel has no hit logs nothing at all (so an empty log, for a room-held search, means "the room had nothing", not "the search was not made").
+  it('writes the source log from the hits that are left: a meeting of the call’s channel is a `meeting` line, one of another channel is never logged', () => {
+    const sourcesFrom = TOOLS['meetings.search']!.sourcesFrom!;
+    const raw = { hits: [{ meetingId: 'standup', channelId: ROOM, atMs: 1 }, { meetingId: 'leads', channelId: OTHER, atMs: 2 }, { meetingId: 'solo', channelId: null, atMs: 3 }] };
+    expect(sourcesFrom(keepRoomHits(raw, ROOM, 8))).toEqual([{ sourceType: 'meeting', sourceRef: 'standup', scope: 'channel' }]);
+    expect(sourcesFrom(keepRoomHits(raw, OTHER, 8))).toEqual([{ sourceType: 'meeting', sourceRef: 'leads', scope: 'channel' }]);
+    // a call whose room has no hit, and a run with no room recorded, log and show nothing
+    expect(sourcesFrom(keepRoomHits({ hits: [{ meetingId: 'leads', channelId: OTHER, atMs: 2 }] }, ROOM, 8))).toEqual([]);
+    expect(sourcesFrom(keepRoomHits(raw, null, 8))).toEqual([]);
+    // messages and files are held the same way
+    const messages = { hits: [{ id: 'in', channel: { id: ROOM } }, { id: 'out', channel: { id: OTHER } }] };
+    expect(TOOLS['messages.search']!.sourcesFrom!(keepRoomHits(messages, ROOM, 10))).toEqual([{ sourceType: 'message', sourceRef: 'in', scope: 'channel' }]);
+    expect(TOOLS['files.search']!.sourcesFrom!(keepRoomHits(messages, ROOM, 10))).toEqual([{ sourceType: 'file', sourceRef: 'in', scope: 'channel' }]);
   });
   it('covers exactly the searches that name a channel', () => {
     expect([...ROOM_SCOPED_READS].sort()).toEqual(['files.search', 'meetings.search', 'messages.search']);

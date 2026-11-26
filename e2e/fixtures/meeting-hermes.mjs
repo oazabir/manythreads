@@ -6,7 +6,8 @@
 //                                          is an action for the speaker; "can you" or "please" with no taker is an action with no owner; a line ending in "?" is
 //                                          a question; YYYY-MM-DD in a line is its due date. A line starting with "CRASH" makes the model fall over.
 //   "Answer a question asked in a meeting." one sentence that repeats the question (so a spec sees what the run was given). With "SEARCH-MEETINGS <words>" in the question
-//                                          the run first reads the meetings it may see (the `meetings.search` tool), as a model that looks things up would.
+//                                          the run first reads the meetings it may see (the `meetings.search` tool), as a model that looks things up would; it says "I found nothing" when
+//                                          the search shows no hit (a run in a call is shown only hits of the call's own channel).
 //   "ANSWER-FROM-MEETINGS <words>" anywhere in the prompt (a person asking the Brain in a conversation): searches the team's meetings for <words> over the run's own
 //                                          MCP endpoint, as a model that reads before it cites would, then finishes with the `answer.post` tool citing the first hit's
 //                                          meeting at that hit's time. With no hit it answers that it found nothing and cites nothing.
@@ -94,8 +95,13 @@ if (first === 'Write the notes of a meeting.') {
   const q = start >= 0 ? prompt.slice(start + '----- QUESTION -----'.length, end > start ? end : undefined).trim() : '';
   // "SEARCH-MEETINGS <words>" in the question: the run reads the meetings it may see first, as a model that looks things up would
   const looked = /SEARCH-MEETINGS ([^\n?]{1,100})/.exec(q)?.[1]?.trim();
-  if (looked) await toolCaller()('meetings.search', { query: looked });
-  reply(`From what this room may read: we ship on Thursday morning. You asked: ${q.slice(0, 200)}`);
+  // the answer follows what the search gave back (P38-08): a search that shows no hit (the run is held to its call's channel, so a meeting of another channel is not shown) is
+  // answered with "I found nothing", never with what only the hit could have said
+  const found = looked ? await toolCaller()('meetings.search', { query: looked }) : null;
+  // a search that did not work (a refusal, a bad token) is told apart from one that worked and found nothing, so a spec cannot pass on a broken call
+  if (found !== null && !found.includes('hits')) reply(`The search did not work. You asked: ${q.slice(0, 200)}`);
+  else if (found !== null && !found.includes('meetingId')) reply(`I found nothing about that in what this room may read. You asked: ${q.slice(0, 200)}`);
+  else reply(`From what this room may read: we ship on Thursday morning. You asked: ${q.slice(0, 200)}`);
 } else {
   const name = /^Name: (.*)$/m.exec(prompt)?.[1] ?? 'Meeting';
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'meeting';
