@@ -4,9 +4,10 @@ import { DESKTOP, MOBILE, expectWireframe, openPage } from '../support/vt.ts';
 import { mainComposer, openAttach, showFormatting } from '../../support/composer.ts';
 
 /*
- * The composer toolbar (PLAN P21-04, own baselines, class W): the formatting bar (shown from the Attach menu, P36-09) under a typed message with the send
- * icon, the "@" list under its headings (Everyone, People), and ":" + two letters with the emoji list; at 390x844 the box at rest (Attach, Send) and the
- * Attach menu open.
+ * The composer toolbar (PLAN P21-04, own baselines, class W): the formatting bar (pinned from the Attach menu; since P37-01 it also shows by itself while the box has text or focus) under a typed message with the send
+ * icon, the "@" list under its headings (Everyone, People), and ":" + two letters with the emoji list; at 390x844 the box with a typed message and the
+ * Attach menu open. Since P37-01 the bar is drawn in every picture here where the box has text (the "@" list, the emoji list and both 390 pictures): their
+ * baselines change; composer-toolbar-1440 should not.
  * composer-toolbar-1440.png, composer-mention-1440.png, composer-emoji-1440.png, composer-toolbar-390.png, composer-toolbar-390-open.png.
  * Times and counts are masked by the screen itself. No baseline is committed with this spec: the runner creates them after looking at every picture.
  */

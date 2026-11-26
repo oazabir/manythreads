@@ -5,7 +5,8 @@ import type { PersonaKey } from '../support/env.ts';
 
 /**
  * PLAN phase 3 criterion 10, second half and the exit line "the sidebar matches the contract for every persona including Lena":
- * Summaries (2) · Chat (5) · Files (10) · Boards (20) · Org chart (23) · Jobs (26) · Threads (30) · Approvals (35) · channel groups (40) · Direct messages (45) · Bots (50), in exactly that
+ * Summaries (2) · Chat (5) · Schedule (8) · Files (10) · Boards (20) · Org chart (23) · Jobs (26) · Deliveries (27) · Threads (30) · Drafts (32) · Approvals (35) · channel groups (40) ·
+ * Direct messages (45) · Projects (48) · Bots (50) (clients/web/src/shell/nav.ts, test/shell-nav.test.ts; no Meetings entry since P37-07 and no Bookmarks entry since P37-08), in exactly that
  * order for each of the seven people (a guest sees the one entry that allows guests: the channels she was granted). The sections are
  * read from the page, in DOM order, on a stack with the seed's channels.
  */
@@ -20,7 +21,8 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-const CONTRACT = ['Summaries', 'Chat', 'Files', 'Boards', 'Org chart', 'Jobs', 'Threads', 'Approvals', 'channel groups', 'Direct messages', 'Bots'];
+const ITEMS = ['Summaries', 'Chat', 'Schedule', 'Files', 'Boards', 'Org chart', 'Jobs', 'Deliveries', 'Threads', 'Drafts', 'Approvals'];
+const CONTRACT = [...ITEMS, 'channel groups', 'Direct messages', 'Projects', 'Bots'];
 
 const PEOPLE: ReadonlyArray<[PersonaKey, string[]]> = [
   ['omar', CONTRACT],
@@ -43,15 +45,15 @@ for (const [key, expected] of PEOPLE) {
       const sections = await sidebar.locator(':scope > *').evaluateAll((children) =>
         children.flatMap((el) => {
           if (el.classList.contains('channel-groups')) return ['channel groups'];
-          if (el.classList.contains('sec-row')) return [(el.querySelector('.sec')?.textContent ?? '').trim().replace(/\s+/g, ' ').replace(/(No conversations yet|No bots yet)$/, '').trim()];
+          if (el.classList.contains('sec-row')) return [(el.querySelector('.sec')?.textContent ?? '').trim().replace(/\s+/g, ' ').replace(/(No conversations yet|No projects yet|No bots yet)$/, '').trim()];
           if (el.classList.contains('it') && !el.classList.contains('dm-new-btn')) return [(el.querySelector('.it-label')?.textContent ?? '').trim()];
           return []; // the rows and the "New message" button that belong to Direct messages; the Bots rows
         }),
       );
       expect(sections).toEqual(expected);
-      // the order is also the `order` of the contract entries (2, 5, 10, 20, 23, 26, 30, 35, 40, 45, 50), so a persona-specific reordering cannot hide here
+      // the order is also the `order` of the contract entries (2, 5, 8, 10, 20, 23, 26, 27, 30, 32, 35, 40, 45, 48, 50), so a persona-specific reordering cannot hide here
       const channelGroupsAt = await sidebar.locator(':scope > *').evaluateAll((els) => els.findIndex((e) => e.classList.contains('channel-groups')));
-      expect(channelGroupsAt).toBe(key === 'lena' ? 0 : 8);
+      expect(channelGroupsAt).toBe(key === 'lena' ? 0 : ITEMS.length);
     } finally {
       await context.close();
     }
@@ -64,10 +66,10 @@ test('priya (two teams): the second team has the same contract', async ({ browse
     const sidebar = page.locator('[data-landmark="sidebar"]');
     await expect(sidebar.locator('.channel-groups .group').first()).toBeVisible();
     const labels = await sidebar.locator(':scope > .it').evaluateAll((els) => els.filter((e) => !e.classList.contains('dm-new-btn')).map((e) => (e.querySelector('.it-label')?.textContent ?? '').trim()));
-    expect(labels).toEqual(['Summaries', 'Chat', 'Files', 'Boards', 'Org chart', 'Jobs', 'Threads', 'Approvals']);
-    await expect(sidebar.locator(':scope > .sec-row > .sec')).toHaveText([/^Direct messages/, /^Bots/]);
+    expect(labels).toEqual(ITEMS);
+    await expect(sidebar.locator(':scope > .sec-row > .sec')).toHaveText([/^Direct messages/, /^Projects/, /^Bots/]);
     // this seed has no bot of its own: the Bots section lists the workspace Brain alone (the roster spec covers a team that has one of its own)
-    await expect(sidebar.locator(':scope > .sec-row > .sec').nth(1)).not.toContainText('No bots yet');
+    await expect(sidebar.locator(':scope > .sec-row > .sec').nth(2)).not.toContainText('No bots yet');
     await expect(sidebar.getByTestId('sidebar-bot')).toHaveText(['Brain']);
   } finally {
     await context.close();
