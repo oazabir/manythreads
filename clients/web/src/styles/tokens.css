@@ -274,6 +274,7 @@
 /* look tokens that do not change with the theme */
 :root {
   /* P21-20 look tokens: screens use these names, not raw sizes, radii or colours (stylelint enforces it) */
+  --chead-h: 53px; /* the header band, border included: a channel's (32 px icons) and every page's (P34-06: one header pattern, one height) */
   --fs-display: 28px; /* the product name on the sign-in card */
   --fs-h1: 22px;
   --fs-h2: 16px;

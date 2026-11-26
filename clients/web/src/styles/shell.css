@@ -545,7 +545,7 @@ a.sec:hover {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 50px;
+  min-height: var(--chead-h);
   padding: 11px 20px;
   border-bottom: 1px solid var(--rule);
 }
