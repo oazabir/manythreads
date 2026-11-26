@@ -24,8 +24,7 @@ test('the sidebar opens the page: title, date, refresh and the five cards', asyn
   try {
     if (isMobile) {
       // the phone's drawer holds the same rows; this check goes straight to the page
-      await expect(page).toHaveURL(/\/t\/[^/]+\//);
-      await page.goto(`/t/${new URL(page.url()).pathname.split('/')[2] ?? ''}/summaries`);
+      await page.goto('/t/engineering/summaries');
     } else {
       await page.locator('[data-landmark="sidebar"]').getByRole('link', { name: 'Summaries' }).click();
     }
@@ -81,12 +80,9 @@ test('a row is one whole link, and a card with more than five rows says how many
 });
 
 test('on a phone the cards stack in one column with no sideways scroll', async ({ browser, playwright }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/', { viewport: PHONE, mobile: true });
+  // straight to the page: `/` is the Threads home and stays at `/` (it does not move to a team address), so no team name can be read from the address there
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/summaries', { viewport: PHONE, mobile: true });
   try {
-    await page.goto('/');
-    await expect(page).toHaveURL(/\/t\/[^/]+\//);
-    const team = new URL(page.url()).pathname.split('/')[2] ?? '';
-    await page.goto(`/t/${team}/summaries`);
     await expect(page.getByTestId('summaries')).toBeVisible();
     await expect(page.locator('[data-testid="summaries-card"]').first()).toBeVisible();
     const box = async (id: string) => page.locator(`[data-testid="summaries-card"][data-card="${id}"]`).boundingBox();
