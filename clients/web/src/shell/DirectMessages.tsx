@@ -115,11 +115,19 @@ export function DmRows({ slug, folded = false }: { slug: string; folded?: boolea
   );
 }
 
-/** The "+ New message" button with its picker, under the rows (sidebar) or above them (phone page). */
-export function NewMessageButton({ slug }: { slug: string }) {
+/**
+ * The "+ New message" button with its picker, under the rows (sidebar) or above them (phone page). `asked` opens the picker once (the sidebar's New menu sends
+ * `?new=person` to the Messages page); `onAsked` runs when it has, so the page can clear the request.
+ */
+export function NewMessageButton({ slug, asked = false, onAsked }: { slug: string; asked?: boolean; onAsked?: () => void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), box);
+  useEffect(() => {
+    if (!asked) return;
+    setOpen(true);
+    onAsked?.();
+  }, [asked, onAsked]);
   return (
     <div className="dm-new" ref={box}>
       <button type="button" className="it dm-new-btn" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}>

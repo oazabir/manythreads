@@ -1,5 +1,5 @@
 import { friendlyPath } from '../../components/friendlyPath';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery } from '../../app/useQuery';
 import { Dialog } from '../../components/Dialog';
@@ -30,6 +30,9 @@ import {
 } from './model';
 import { NONE, type Selection } from './selection';
 import { PERSONAL, isPersonalKey, personalPanelId, spaceHref } from './spaces';
+import { sayToast } from '../../kernel/toast';
+import { NEW_PARAM } from '../../shell/newMenu';
+import { useNewRequest } from '../../shell/useNewRequest';
 import { bumpFiles, useAdminFiles, useFileSpaces, useFilesVersion, type TeamFiles } from './store';
 import { Tree, treeKey } from './Tree';
 import { useFolders } from './useFolders';
@@ -187,12 +190,14 @@ export function FilesScreen() {
   const state = folders.get(space, folder);
   const info = state?.listing?.folder;
   const rootState = folders.get(space, ROOT);
-  const rows = state?.listing?.rows ?? [];
+  const listedRows = state?.listing?.rows;
+  const rows = useMemo(() => listedRows ?? [], [listedRows]);
   const itemCount = rows.length;
 
   const go = useCallback(
     (next: { folder?: string; open?: string | null }): void => {
       const q = new URLSearchParams(loc.search);
+      q.delete(NEW_PARAM); // a request from the New menu never rides along into the next address
       if (next.folder !== undefined) {
         if (next.folder === ROOT) q.delete('path');
         else q.set('path', next.folder);
@@ -360,6 +365,42 @@ export function FilesScreen() {
   const canUpload = Boolean(info) && !adminView && (personal ? writable && folder !== ROOT : acceptsUploads(folder) ? true : !attachments && writable);
   const canCreate = Boolean(info) && !adminView && !attachments && writable;
   const canPage = canCreate && !(personal && folder === ROOT);
+
+  // "New personal file", "New team file" and "New folder" from the sidebar's New menu (`?new=file`, `?new=folder`): the dialog the buttons below open, started once the
+  // folder's listing is here. Personal keeps no file at its top (files live inside a folder), so there the request first steps into the person's first folder of their own,
+  // or, with none, opens the New folder dialog; a folder that only changes by proposal opens the propose dialog.
+  const asked = useNewRequest(['file', 'folder'] as const);
+  const askedKind = asked.kind;
+  const askedDone = asked.done;
+  const askedStatus = state?.status;
+  useEffect(() => {
+    if (!askedKind) return;
+    if (!files || !info) {
+      if (askedStatus === 'error') askedDone();
+      return;
+    }
+    let opened = true;
+    if (askedKind === 'folder') {
+      if (canCreate) setDialog('folder');
+      else opened = false;
+    } else if (canPage) {
+      setDialog('page');
+    } else if (personal && folder === ROOT && !adminView) {
+      const own = rows.find((r) => r.kind === 'folder' && !r.readOnly && r.managedBy === null);
+      if (own) {
+        go({ folder: own.path });
+        return;
+      }
+      if (canCreate) setDialog('folder');
+      else opened = false;
+    } else if (info.readOnlyReason === 'change_by_pull_request') {
+      setDialog('propose');
+    } else {
+      opened = false;
+    }
+    if (!opened) sayToast(askedKind === 'folder' ? 'A folder cannot be added here. Open a folder you can change first.' : 'A file cannot be added here. Open a folder you can change first.');
+    askedDone();
+  }, [askedKind, askedStatus, askedDone, files, info, rows, canCreate, canPage, personal, adminView, folder, go]);
 
   const uploadTitle = personal && folder === ROOT ? 'Open a folder first: files in Personal live inside a folder.' : folder === 'channels' ? 'Open a channel folder to upload there.' : undefined;
   const actions = adminView ? undefined : (

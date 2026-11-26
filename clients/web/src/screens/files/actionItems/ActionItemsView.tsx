@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { personalRecipeById, recipeToDraft, type ActionItemView, type ChangeActionItemRequest, type ListActionItemsResponse, type TeamSummary } from '@manythreads/shared';
 import { fetchTeams } from '../../../api/endpoints';
@@ -10,6 +10,7 @@ import { ForbiddenBody, QueryView } from '../../../components/states';
 import { Time } from '../../../components/ui';
 import { useSession } from '../../../app/session';
 import { useQuery } from '../../../app/useQuery';
+import { useNewRequest, whenThere } from '../../../shell/useNewRequest';
 import { message } from '../../memory/inboxWords';
 import { createRoutine } from '../routines/routinesApi';
 import { localTimeZone, sourcesSentence } from '../routines/routinesWords';
@@ -45,6 +46,21 @@ export function ActionItemsView() {
 function ActionItemsBody() {
   const q = useQuery('my-action-items', fetchActionItems);
   const [notice, setNotice] = useState<string | null>(null);
+  // "New action item" from the sidebar's New menu (`?new=action`): the cursor goes into the "Add an action" box once the list is here
+  const asked = useNewRequest(['action'] as const);
+  const askedAction = asked.kind === 'action';
+  const askedDone = asked.done;
+  const loaded = q.status === 'ok';
+  useEffect(() => {
+    if (!askedAction || !loaded) return;
+    return whenThere(
+      () => document.getElementById('ai-what'),
+      (el) => {
+        el?.focus();
+        askedDone();
+      },
+    );
+  }, [askedAction, loaded, askedDone]);
   return (
     <>
       <PageHeader title="Your action items" description="Things you have to do, kept in your own files. You can change the list yourself, or let a routine keep it up to date." />

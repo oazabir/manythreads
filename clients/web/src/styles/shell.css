@@ -203,6 +203,75 @@ button.team {
   outline-offset: 0;
 }
 
+/* the New button under the search box and its pull-down menu (P38-07, shell/NewMenu.tsx); the menu is as wide as the rail and scrolls when the screen is short */
+.rail .new-menu {
+  position: relative;
+  padding: 4px 12px 2px;
+}
+
+.nm-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.nm-btn .nm-caret {
+  margin-left: auto;
+}
+
+.menu.nm-menu {
+  top: calc(100% + 2px);
+  max-height: calc(100dvh - 170px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.menu-item.nm-item {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.menu-item.nm-item:focus-visible {
+  background: var(--nav-on);
+}
+
+.nm-ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--mute);
+}
+
+.nm-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.nm-label {
+  color: var(--ink);
+}
+
+.nm-hint {
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (pointer: coarse) {
+  .menu-item.nm-item {
+    min-height: 44px;
+  }
+}
+
 .rail .sidebar {
   flex: 1;
   padding: 6px 8px 12px;

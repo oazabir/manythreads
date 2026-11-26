@@ -13,6 +13,7 @@ import { SeriesIcon } from '../../shell/icons';
 import { meetingPath } from '../../shell/messageLink';
 import { useNarrow } from '../../shell/useNarrow';
 import { LivePageEditor } from '../../viewers/markdown/LivePageEditor';
+import { useNewRequest } from '../../shell/useNewRequest';
 import { AppointmentForm } from './AppointmentForm';
 import { agendaDay, repeatLabel } from './series';
 import { addDays, joinable, onDay, placeInDay, sameDay, step, timeRange, viewDays, viewLabel, type CalendarView } from './calendar';
@@ -53,6 +54,15 @@ export function ScheduleScreen() {
   // the agenda as text, for a person invited from another team (they cannot open the team's files)
   const [reading, setReading] = useState<{ title: string; page: AppointmentAgendaResponse | null; error: string | null } | null>(null);
   const [params, setParams] = useSearchParams();
+  // "Schedule a meeting" in the sidebar's New menu (`?new=appointment`): the New appointment form opens, with the cursor in its first box
+  const asked = useNewRequest(['appointment'] as const);
+  const askedDone = asked.done;
+  const askedAppointment = asked.kind === 'appointment';
+  useEffect(() => {
+    if (!askedAppointment) return;
+    setForm({});
+    askedDone();
+  }, [askedAppointment, askedDone]);
   const now = useNow();
   const shownView: CalendarView = narrow && view === 'week' ? 'day' : view;
   const days = useMemo(() => viewDays(shownView, anchor), [shownView, anchor]);

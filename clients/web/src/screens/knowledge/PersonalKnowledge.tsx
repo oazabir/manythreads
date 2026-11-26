@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { KNOWLEDGE_MAX_PERSONAL_BASES, type KnowledgeHit, type PersonalKnowledgeBase } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
 import { Dialog } from '../../components/Dialog';
 import { Time } from '../../components/ui';
+import { useNewRequest, whenThere } from '../../shell/useNewRequest';
 import { message } from '../memory/inboxWords';
 import { ConnectorSourceForm, ConnectorSourceLine } from './ConnectorSourceForm';
 import { firstReadPending, useFirstReadRefresh } from './useFirstRead';
@@ -22,6 +23,31 @@ export function PersonalKnowledge() {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+
+  // "Add to knowledge" and "New knowledge base" from the sidebar's New menu (`?new=upload`, `?new=base`). A base is named first, so with none (or when a new base is asked
+  // for) the cursor goes into the name box; with one, the open base's own Upload button is pressed, which opens the file chooser (the press counts as the person's own
+  // when it follows their click on the menu; if the browser no longer treats it so, the button only takes focus and the person presses it).
+  const asked = useNewRequest(['upload', 'base'] as const);
+  const askedKind = asked.kind;
+  const askedDone = asked.done;
+  const baseCount = list.status === 'ok' ? list.data.bases.length : null;
+  useEffect(() => {
+    if (!askedKind) return;
+    if (baseCount === null) {
+      if (list.status === 'error') askedDone();
+      return;
+    }
+    const uploading = askedKind === 'upload' && baseCount > 0;
+    return whenThere(
+      () => document.querySelector<HTMLElement>(uploading ? '[data-testid="personal-base-upload"]:not(:disabled)' : '#kn-new-name:not(:disabled)'),
+      (el) => {
+        el?.focus();
+        if (el && uploading && navigator.userActivation?.isActive === true) el.click();
+        askedDone();
+      },
+      240, // the base's own panel loads its documents first: up to four seconds, inside the browser's few seconds of "just clicked"
+    );
+  }, [askedKind, baseCount, list.status, askedDone]);
 
   if (list.status === 'loading') return <div className="view-empty" aria-busy="true" />;
   if (list.status === 'error') return <p className="mi-error" role="alert" data-testid="personal-knowledge-error">Your knowledge bases could not be loaded: {list.error.message}</p>;
