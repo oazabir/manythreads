@@ -221,7 +221,7 @@ describe('the web server and the service worker', () => {
     expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval' ");
     expect(csp).not.toContain("'unsafe-eval'");
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
-    expect(NGINX).toContain('add_header Permissions-Policy "microphone=(self), camera=(self)" always;');
+    expect(NGINX).toContain('add_header Permissions-Policy "microphone=(self), camera=(self), display-capture=(self)" always;');
   });
 
   it('the image fetches the models in a stage of its own and serves them at /models', () => {
