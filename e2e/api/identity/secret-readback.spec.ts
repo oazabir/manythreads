@@ -13,6 +13,7 @@ const FORBIDDEN_KEY = /hash|secret|ciphertext|wrapped.?key|password|passwd|priva
 const ALLOWED_KEYS = new Set<string>([
   'hasSecret', // OIDC provider admin API: a boolean that says a client secret is stored; the secret itself is never returned
   'passwordForMembers', // workspace settings: a boolean switch (members may use the password form), admin-only route
+  'mustChangePassword', // the session payload (P27-03): a boolean that says the made-up first password must be replaced; no password is in it
 ]);
 
 const PARAM_VALUES: Record<string, string> = {
