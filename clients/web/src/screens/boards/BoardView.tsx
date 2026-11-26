@@ -18,6 +18,7 @@ import { templateRequest, type BoardTemplate, type BoardTemplateId } from './tem
 import { useChannelFeed } from '../../shell/channelFeed';
 import { PaneResizer } from '../../kernel/panes/PaneResizer';
 import { PANES } from '../../kernel/panes/paneWidth';
+import { useNewRequest, whenThere } from '../../shell/useNewRequest';
 
 /*
  * The board itself (SPEC §6.5, PLAN P6-07): a saved view's columns, the cards in each, and a drag that is a task call. A card may only
@@ -198,6 +199,34 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
       setFormProblem(refusalText(err));
     }
   };
+
+  // "New card" and "New board" from the sidebar's New menu (`?new=card`, `?new=board`): the same form the buttons below open, with the cursor in its first box. A team with no
+  // board yet has nothing to put a card on, so either request lands on the first-board start (a lead or admin names it; others read why it is not theirs to make).
+  const asked = useNewRequest(['card', 'board'] as const);
+  const askedKind = asked.kind;
+  const askedDone = asked.done;
+  const hasBoards = boards.length > 0;
+  useEffect(() => {
+    if (!askedKind) return;
+    let box = '[data-testid="new-board-name"]';
+    if (hasBoards && askedKind === 'card') {
+      setDraft(emptyCard());
+      setFormProblem(null);
+      box = '[data-testid="new-card-title"]';
+    } else if (hasBoards && canManage) {
+      setNewBoard(true);
+    } else if (hasBoards || !canManage) {
+      askedDone(); // a member cannot add a board, and with none there is nothing to put a card on; the screen stays as it is
+      return;
+    }
+    return whenThere(
+      () => document.querySelector<HTMLElement>(box),
+      (el) => {
+        el?.focus();
+        askedDone();
+      },
+    );
+  }, [askedKind, hasBoards, canManage, askedDone]);
 
   if (boards.length === 0) {
     return (

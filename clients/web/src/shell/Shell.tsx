@@ -26,6 +26,7 @@ import { headerRoom, useElementWidth } from './headerRoom';
 import { GUEST_SLUG } from './messageLink';
 import { viewTitle } from './nav';
 import { SetupCard } from './SetupCard';
+import { NewMenu } from './NewMenu';
 import { Sidebar } from './Sidebar';
 import { CrumbTailContext, HeaderActionsContext, HeaderTitleContext, HeaderTitleSlotContext, HeaderTopicContext, PageHeaderRegistry } from './topic';
 import { TeamSwitch } from './TeamSwitch';
@@ -136,6 +137,7 @@ export function Shell() {
           <div className="region search" data-landmark="search" ref={railSearch} title={searchLabel}>
             <SearchBox placeholder={searchLabel} label="Search" />
           </div>
+          <NewMenu />
           <nav className="region sidebar" data-landmark="sidebar" aria-label="Sidebar">
             <Sidebar />
           </nav>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { PERSONAL_ROUTINE_RECIPES, type ListPersonalRoutinesResponse, type PersonalRoutine, type RoutineQuietHours } from '@manythreads/shared';
 import { EmptyState } from '../../../components/EmptyState';
@@ -8,6 +8,7 @@ import { ForbiddenBody, QueryView } from '../../../components/states';
 import { Time } from '../../../components/ui';
 import { useSession } from '../../../app/session';
 import { useQuery } from '../../../app/useQuery';
+import { useNewRequest } from '../../../shell/useNewRequest';
 import { message } from '../../memory/inboxWords';
 import { AddIcon, AlarmClockIcon, DeleteIcon, PlayIcon, TaskListIcon } from '@proicons/react';
 import { NewRoutineDialog } from './NewRoutineDialog';
@@ -57,6 +58,16 @@ function RoutinesBody() {
   const zoneNow = localTimeZone();
   const zoneOf = (data: ListPersonalRoutinesResponse | undefined): string => data?.settings.timeZone ?? zoneNow;
   const loaded = q.status === 'ok' ? q.data : undefined;
+  // "New routine" from the sidebar's New menu (`?new=routine`): the New routine dialog opens, as the button does, unless the person is at their limit
+  const asked = useNewRequest(['routine'] as const);
+  const askedRoutine = asked.kind === 'routine';
+  const askedDone = asked.done;
+  const atLimit = loaded !== undefined && loaded.limits.used >= loaded.limits.maxRoutines;
+  useEffect(() => {
+    if (!askedRoutine || loaded === undefined) return;
+    if (!atLimit) setDialog({ startWith: null });
+    askedDone();
+  }, [askedRoutine, loaded, atLimit, askedDone]);
 
   return (
     <>

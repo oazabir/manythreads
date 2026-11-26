@@ -1,5 +1,5 @@
 import { PageHeader } from '../../components/PageHeader';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import type { NavChannel, Project, ProjectProvider } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
@@ -8,6 +8,7 @@ import { QueryView } from '../../components/states';
 import { StatusStrip } from '../../components/StatusStrip';
 import { Alert, Field, Notice } from '../../components/ui';
 import { useChannelFeed } from '../../shell/channelFeed';
+import { useNewRequest, whenThere } from '../../shell/useNewRequest';
 import { useBotPerms } from '../bots/store';
 import { createProject, deleteProject, fetchProjects, removePushCredential, setPushCredential, testPushCredential, updateProject } from './api';
 import { PROVIDER_NAME, TOKEN_HELP, describeShare, describeToken, hostOf, needsProviderChoice, ownerOfRepo, podPath, providerOfAddress, requestWord, stripItem, validateEdit, validateNew, type FormErrors } from './commands';
@@ -339,6 +340,25 @@ export function ProjectsScreen() {
   const channels = feed.groups.flatMap((g) => g.channels);
   const [adding, setAdding] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  // "New project" from the sidebar's New menu (`?new=project`): the Add a project form opens with the cursor in its name box (only a lead or an admin may, as for the button)
+  const asked = useNewRequest(['project'] as const);
+  const askedProject = asked.kind === 'project';
+  const askedDone = asked.done;
+  useEffect(() => {
+    if (!askedProject) return;
+    if (!canEdit) {
+      askedDone();
+      return;
+    }
+    setAdding(true);
+    return whenThere(
+      () => document.querySelector<HTMLElement>('[data-testid="projects-add"] input'),
+      (el) => {
+        el?.focus();
+        askedDone();
+      },
+    );
+  }, [askedProject, canEdit, askedDone]);
   // every change on this page tells the sidebar's Projects section to ask again
   const reload = () => {
     projects.reload();

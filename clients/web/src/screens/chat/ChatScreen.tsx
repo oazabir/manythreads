@@ -13,6 +13,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { sayToast } from '../../kernel/toast';
 import { BackIcon, RailIcon } from '../../shell/icons';
 import { useCrumbTail } from '../../shell/topic';
+import { useNewRequest, whenThere } from '../../shell/useNewRequest';
 import { useNarrow } from '../../shell/useNarrow';
 import { fetchBots } from '../bots/api';
 import { openConversation } from '../conversations/api';
@@ -344,6 +345,24 @@ export function ChatScreen() {
     setRailOpen(false);
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="chat-main"] textarea')?.focus());
   }, [go]);
+
+  // "New chat with a bot" from the sidebar's New menu (`?new=chat`): the address names no conversation, so the empty chat is already open; once it is drawn the cursor goes
+  // into its message box (the box is not there while the bot is still opening, or when there is no bot, so the request waits for it and gives up after a second)
+  const asked = useNewRequest(['chat'] as const);
+  const askedChat = asked.kind === 'chat';
+  const askedDone = asked.done;
+  const opening = opened.status === 'loading';
+  useEffect(() => {
+    if (!askedChat || opening) return;
+    setRailOpen(false);
+    return whenThere(
+      () => document.querySelector<HTMLTextAreaElement>('[data-testid="chat-main"] textarea'),
+      (box) => {
+        box?.focus();
+        askedDone();
+      },
+    );
+  }, [askedChat, opening, askedDone]);
 
   // ---- the message box: its own commands, and the Up arrow to edit the last message -------------------------------------------------------------
   const [editTick, setEditTick] = useState(0);

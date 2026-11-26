@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ScheduledJob, ScheduledJobEffort, ScheduledJobKind } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
 import { Alert, Time } from '../../components/ui';
 import { SkeletonRows } from '../../components/Skeleton';
+import { useNewRequest, whenThere } from '../../shell/useNewRequest';
 import { refusalText } from './board';
 import { useTeamPeople } from './people';
 import { SCHEDULED_JOB_KIND_BLURB, SCHEDULED_JOB_KIND_LABEL, RUN_STATUS_LABEL, cronNote, emptyScheduledJob, scheduledJobRequest, tileDraft, type JobTile, type ScheduledJobDraft } from './scheduled-job';
@@ -92,6 +93,29 @@ export function ScheduledJobsView({ slug, canManage }: { slug: string; canManage
       setProblem(refusalText(err));
     }
   };
+
+  // "New job" from the sidebar's New menu (`?new=job`): the New job form opens once the list and the bots are here (a member has no such button, so for them it only ends the request)
+  const asked = useNewRequest(['job'] as const);
+  const askedJob = asked.kind === 'job';
+  const askedDone = asked.done;
+  const ready = listQ.status === 'ok' && !people.loading;
+  const firstBot = people.bots[0]?.slug ?? '';
+  useEffect(() => {
+    if (!askedJob || !ready) return;
+    if (!canManage) {
+      askedDone();
+      return;
+    }
+    setDraft(emptyScheduledJob(firstBot));
+    setProblem(null);
+    return whenThere(
+      () => document.querySelector<HTMLElement>('[data-testid="scheduled-job-name"]'),
+      (el) => {
+        el?.focus();
+        askedDone();
+      },
+    );
+  }, [askedJob, ready, canManage, firstBot, askedDone]);
 
   if (listQ.status === 'loading') return <SkeletonRows rows={4} label="Loading jobs" />;
   if (listQ.status === 'error') {

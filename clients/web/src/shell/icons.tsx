@@ -15,7 +15,9 @@ import { BarChartIcon, CodeSquareIcon, QuoteIcon, TextBoldIcon, TextBulletListIc
 import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, PanelRightIcon, SaveIcon, ChevronRightIcon } from '@proicons/react';
 import { AlertTriangleIcon, CircleIcon, CircleSmallIcon, DocumentIcon, FlagIcon, HandIcon, LightbulbIcon, TerminalIcon, GlobeIcon as ProGlobe } from '@proicons/react';
 import { BulletListIcon as ProBulletList, GridIcon as ProGrid } from '@proicons/react';
+import { BookIcon, FolderAddIcon, LibraryIcon } from '@proicons/react';
 import { proIcon } from '../components/proicon';
+import type { NewIconName } from './newMenu';
 
 /* The shell's icons are ProIcons (see components/proicon.tsx); the names below are what the screens import. */
 
@@ -248,3 +250,24 @@ export const PinMarkIcon = proIcon(PinIcon, 12);
 
 /* Summarise a channel or a thread (PLAN P18-05): the menu item, the Catch me up button and the thread's tool. */
 export const SummariseIcon = proIcon(TextDescriptionIcon, 14);
+
+/** The "New" menu (P38-07): one icon for each thing a person can start. */
+export const NEW_ICONS: Record<NewIconName, ReturnType<typeof proIcon>> = {
+  chat: proIcon(ChatIcon, 16),
+  person: proIcon(PersonIcon, 16),
+  channel: proIcon(ProHash, 16),
+  meeting: proIcon(VideoClipIcon, 16),
+  file: proIcon(DocumentIcon, 16),
+  'team-file': proIcon(FileMultipleIcon, 16),
+  appointment: proIcon(CalendarIcon, 16),
+  action: proIcon(TaskListIcon, 16),
+  card: proIcon(ClipboardIcon, 16),
+  knowledge: proIcon(LibraryIcon, 16),
+  folder: proIcon(FolderAddIcon, 16),
+  board: proIcon(BoardIcon, 16),
+  job: proIcon(ArrowSyncIcon, 16),
+  routine: proIcon(ProClock, 16),
+  bot: proIcon(AndroidIcon, 16),
+  project: proIcon(CodeIcon, 16),
+  base: proIcon(BookIcon, 16),
+};
