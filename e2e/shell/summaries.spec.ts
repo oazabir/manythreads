@@ -130,6 +130,7 @@ test('the foot lists the threads the person opened: empty at first, then a row t
     await expect(row).toContainText(/Opened (just now|\d+ minutes? ago)/);
     // the row opens the thread in its own place (channel, direct message, chat with a bot or meeting chat), not on the Threads page
     await expect(row.locator('a.sm-row-link')).toHaveAttribute('href', new RegExp(rootId));
+    await expect(row.locator('a.sm-row-link')).not.toHaveAttribute('href', /\/threads\?thread=/);
     expect(await foot.getByTestId('summaries-row').count()).toBeLessThanOrEqual(10);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);

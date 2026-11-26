@@ -34,7 +34,10 @@ export async function showFormatting(composer: Locator): Promise<Locator> {
   const menu = await openAttach(composer);
   const toggle = menu.getByTestId('composer-format-toggle');
   if (((await toggle.textContent()) ?? '').includes('Show formatting')) await toggle.click();
-  else await composer.page().keyboard.press('Escape');
+  else {
+    await composer.page().keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+  }
   await expect(bar).toBeVisible();
   return bar;
 }
