@@ -125,7 +125,7 @@ spec:
             {{- end }}
             {{- /* Voice rooms: with media.enabled the server talks to the in-cluster LiveKit; off, the server answers "not set up" (docs/plugins/media-livekit.md). */}}
             {{- if .Values.media.enabled }}
-            - { name: MANYTHREADS_LIVEKIT_URL, value: {{ .Values.media.publicUrl | quote }} }
+            - { name: MANYTHREADS_LIVEKIT_URL, value: {{ include "manythreads.mediaPublicUrl" . | quote }} }
             - { name: MANYTHREADS_LIVEKIT_API_URL, value: "http://manythreads-media:7880" }
             {{- /* The note-taker's listener joins from inside the cluster: the service, not the public address (a pod cannot always reach its own public name). */}}
             - { name: MANYTHREADS_LIVEKIT_LISTEN_URL, value: "ws://manythreads-media:7880" }

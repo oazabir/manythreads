@@ -68,3 +68,12 @@ Network policies of this namespace: the database takes calls only from the platf
 Hermes pods' namespace. A tool you run in this namespace that must reach one of them needs the label app.kubernetes.io/component=backup-tool (what tools/backup uses) or its own policy.
 Roll back with networkPolicies.release.enabled=false.
 {{- end }}
+{{- if .Values.media.enabled }}
+
+Calls (voice and video rooms): the media pod uses the machine's own network. Open these ports to the outside on the machine's firewall and the router (docs/deploy.md "Voice rooms"):
+  UDP {{ .Values.media.rtcPortStart }}-{{ .Values.media.rtcPortEnd }} (audio and video), TCP {{ .Values.media.rtcTcpPort }} (the same when UDP is blocked)
+{{- if .Values.media.turn.enabled }}
+  UDP {{ .Values.media.turn.udpPort }} (TURN) and UDP {{ .Values.media.turn.relayPortStart }}-{{ .Values.media.turn.relayPortEnd }} (TURN relay){{ if gt (int .Values.media.turn.tlsPort) 0 }}; TURN over TLS: TCP 443 on {{ .Values.media.turn.domain }} forwarded to {{ .Values.media.turn.tlsPort }}{{ end }}
+{{- end }}
+Do not open TCP 7880 (the signalling): browsers reach it through the main address{{ if .Values.media.ingressPath }} ({{ .Values.media.ingressPath }}){{ end }}.
+{{- end }}
