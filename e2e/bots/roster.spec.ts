@@ -185,6 +185,7 @@ test('a team lead who is not a workspace admin edits an existing bot, but cannot
 });
 
 test('a definition that fails to load is the red banner on the page and the roster, and the previous version stays live', async ({ browser, playwright }) => {
+  test.setTimeout(90_000);
   const omar = await apiOn(playwright, stack, 'omar');
   const good = await definitionOf(omar);
   const broken = good.content.replace(/^role: .*$/m, 'role:');
@@ -198,7 +199,13 @@ test('a definition that fails to load is the red banner on the page and the rost
     // the roster notices without the page being opened
     const coder = rosterRow(page, 'coder');
     await expect(coder).toContainText('needs a fix', { timeout: 15_000 });
+    // the bot's address says in a line why there is no chat; Nadia is a plain member, so it offers no Bot settings button (P29-13) and she reads the page from the row's gear
     await coder.getByTestId('bot-open').click();
+    await expect(page.getByTestId('bot-no-chat-why')).toContainText('file has a mistake, so it is not running');
+    await expect(page.getByTestId('bot-no-chat-who')).toBeVisible();
+    await expect(page.getByTestId('bot-settings-button')).toHaveCount(0);
+    await page.goBack();
+    await rosterRow(page, 'coder').getByTestId('bot-configure').click();
     await expect(page.getByTestId('bot-page')).toBeVisible();
     await expect(page.getByTestId('bot-invalid-banner')).toContainText('role');
     await expect(page.getByTestId('bot-invalid-banner')).toContainText('The previous version is still running');
@@ -255,7 +262,8 @@ test('a team made from a template starts with its bots: Brain in every template,
     await expect(page.getByTestId('roster-count')).toContainText(/^\d+ bots/);
 
     // the bot's page reads the file the first commit wrote, and its allowlist is the one SPEC §12.4 names plus the answer tool
-    await brain.getByTestId('bot-open').click();
+    // the name opens Brain's chat now (P29-13); the gear opens the settings page that reads the file
+    await brain.getByTestId('bot-configure').click();
     await expect(page.getByTestId('bot-page')).toBeVisible();
     await expect(page.getByTestId('bot-head-runtime')).toHaveAttribute('title', 'bots/brain/BOT.md');
     await page.getByTestId('tab-abilities').click();

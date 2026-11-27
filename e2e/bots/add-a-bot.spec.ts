@@ -227,7 +227,12 @@ test('an admin (who also leads Engineering) writes a brief, sees the grades and 
     await page.getByTestId('setup-approve').click();
     await expect(page.getByTestId('setup-created')).toBeVisible({ timeout: 30_000 });
     await expect.poll(async () => (await api.ctx.get('/api/teams/engineering/bots/release-helper')).status(), { timeout: 30_000 }).toBe(200);
+    // "Open the bot" is the bot's address: this one works on mentions and has no one-to-one chat, so it says so (P29-13) and offers Bot settings, which open the bot's page
     await page.getByTestId('setup-open-bot').click();
+    await expect(page).toHaveURL(/\/t\/engineering\/bots\/release-helper$/);
+    await expect(page.getByTestId('bot-no-chat-why')).toContainText('works on mentions, schedules or events and has no one-to-one chat');
+    await page.getByTestId('bot-settings-button').click();
+    await expect(page).toHaveURL(/\/t\/engineering\/bots\/release-helper\/settings$/);
     await expect(page.getByTestId('bot-page')).toBeVisible();
   } finally {
     await context.close();
