@@ -1,5 +1,8 @@
-import { HttpError, MediaNotConfiguredError, MediaTokenRefusedError, type MediaProvider, type PluginContext, type PluginLogger } from '@manythreads/sdk';
-import type { MediaStatusResponse } from '@manythreads/shared';
+import { HttpError, MediaNotConfiguredError, MediaTokenRefusedError, mediaAddressFor, type MediaProvider, type MediaToken, type PluginContext, type PluginLogger } from '@manythreads/sdk';
+import type { MediaStatusResponse, MeetingJoin } from '@manythreads/shared';
+
+/** A join as the browser gets it; a link guest's identity is `guest:<id>`, not an actor id. */
+export type MediaJoin = Omit<MeetingJoin, 'identity'> & { identity: string };
 
 // Which media provider carries the calls, and what to say when there is none. `MANYTHREADS_MEDIA_PROVIDER` names it (`livekit` by default; `fake` in tests).
 // Looked up when a request arrives, never in `register`: the provider's plugin may load after this one.
@@ -28,6 +31,22 @@ export function requireMedia(ctx: PluginContext): MediaProvider {
   const s = provider.status();
   if (!s.configured) throw new HttpError(409, 'conflict', s.reason ?? NOT_SET_UP);
   return provider;
+}
+
+/**
+ * What a join hands the browser, from a token the provider minted: the ONE place the address of the media server leaves the server (members, a renewed token, a scheduled
+ * room and a link guest all go through here). The address follows the origin the person's request came in on when the media pod is routed under the site's own path, so a
+ * second domain or a local IP gets an address its page is allowed to connect to (`mediaAddressFor`). `origin` is `HttpRequest.origin`.
+ */
+export function joinOf(ctx: PluginContext, token: MediaToken, origin: string | undefined): MediaJoin {
+  return {
+    provider: token.provider,
+    url: mediaAddressFor(token.url, origin, ctx.runtime.publicUrl),
+    token: token.token,
+    identity: token.identity,
+    roomName: token.roomName,
+    expiresAt: token.expiresAt.toISOString(),
+  };
 }
 
 /** What a failed call to the media server becomes for the person: a plain message, never the server's own text. */

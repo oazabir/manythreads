@@ -300,3 +300,12 @@ describe('the service worker model cache', () => {
     expect([...sw.store.keys()].sort()).toEqual([other, 'https://site.test/models/whisper-tiny/rev2/onnx/enc.onnx'].sort());
   });
 });
+
+describe('nginx hands the server the host the person typed (P38-11)', () => {
+  it('every proxied location that sets Host also sets X-Forwarded-Host from the whole Host header, port included', () => {
+    const hosts = NGINX.match(/proxy_set_header Host \$host;/g) ?? [];
+    const forwarded = NGINX.match(/proxy_set_header X-Forwarded-Host \$http_host;/g) ?? [];
+    expect(hosts.length).toBeGreaterThan(0);
+    expect(forwarded.length).toBe(hosts.length);
+  });
+});

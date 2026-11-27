@@ -221,6 +221,8 @@ export interface FakeMediaProvider extends MediaProvider {
   published(): Array<{ room: string; identity: string }>;
   /** Pretend the server is not set up. */
   setConfigured(configured: boolean): void;
+  /** The address the next tokens carry (`FAKE_MEDIA_URL` by default): a test of the same-origin path form sets `wss://<site>/livekit` (PLAN P38-11). */
+  setUrl(url: string): void;
   /** Read the claims back out of a token made by this provider (null for anything else). */
   decode(token: string): { identity: string; room: string; exp: number; canPublish: boolean; canSubscribe: boolean; listenOnly: boolean; sources: string[] | null } | null;
 }
@@ -228,6 +230,7 @@ export interface FakeMediaProvider extends MediaProvider {
 export function createFakeMediaProvider(options: { now?: () => Date } = {}): FakeMediaProvider {
   const now = options.now ?? (() => new Date());
   let configured = true;
+  let url = FAKE_MEDIA_URL;
   const rooms = new Map<string, { maxParticipants: number | null }>();
   const tokens: FakeMediaProvider['tokens'] = [];
   const kicked: FakeMediaProvider['kicked'] = [];
@@ -257,6 +260,9 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
     setConfigured(value) {
       configured = value;
     },
+    setUrl(value) {
+      url = value;
+    },
     status: () => (configured ? { configured: true, reason: null } : { configured: false, reason: 'The fake media server is switched off.' }),
     async createRoom({ name, maxParticipants }) {
       need();
@@ -277,7 +283,7 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
         listen: grants.listenOnly === true,
         src: grants.sources ? [...grants.sources] : null,
       });
-      return { provider: 'fake', url: FAKE_MEDIA_URL, token, identity: actor.id, roomName: room, expiresAt };
+      return { provider: 'fake', url, token, identity: actor.id, roomName: room, expiresAt };
     },
     async closeRoom(room) {
       need();

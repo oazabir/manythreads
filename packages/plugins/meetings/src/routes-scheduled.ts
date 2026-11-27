@@ -105,13 +105,13 @@ export function registerScheduledRoutes(ctx: PluginContext): void {
         if (live === null) throw conflict('This meeting has already happened.');
         const room = await loadMeeting(tx, live);
         if (!room) throw notFound('That voice room is not available');
-        const join = await joinAndToken(ctx, tx, requireMedia(ctx), room, caller);
+        const join = await joinAndToken(ctx, tx, requireMedia(ctx), room, caller, req.origin);
         return json(JoinScheduledMeetingResponse.parse({ meeting: toMeeting(room), created: false, join }));
       }
       // Whoever may post in the channel may open the room; the database marks the plan started, and one live room per plan keeps two presses of Start in one room.
       // The new room gets its stamped start message like any call, and a start whose card cannot be written fails here too. What the plan does once its room is open
       // runs before the media room is asked for, so a refused start leaves none.
-      const { m, created, join } = await startRoom(ctx, tx, { channelId: plan.channel_id, title: plan.title, caller, scheduledMeetingId: plan.id, onCreated: () => afterRoomOpened(ctx, tx, plan) });
+      const { m, created, join } = await startRoom(ctx, tx, { channelId: plan.channel_id, title: plan.title, caller, scheduledMeetingId: plan.id, origin: req.origin, onCreated: () => afterRoomOpened(ctx, tx, plan) });
       return json(JoinScheduledMeetingResponse.parse({ meeting: toMeeting(m), created, join }));
     }),
   });

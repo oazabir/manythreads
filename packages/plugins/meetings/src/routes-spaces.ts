@@ -34,6 +34,7 @@ export function registerMeetingSpaceRoutes(ctx: PluginContext): void {
         channelId,
         title: body.title,
         caller,
+        origin: req.origin,
         ...(body.kind ? { kind: body.kind } : {}),
         ...(body.inviteeIds.length > 0 ? { inviteeIds: body.inviteeIds.filter((p) => p !== caller.personId) } : {}),
       });
