@@ -180,6 +180,10 @@ describe.skipIf(!haveHelm)('a second release on the same cluster', () => {
     const plain = renderSecond(SECOND_SET, ['values-install.yaml']);
     const overlap = clusterIds(plain.docs).filter((i) => clusterIds(live).includes(i));
     expect(overlap).toEqual(expect.arrayContaining(['Namespace/manythreads-bots', 'ValidatingAdmissionPolicy/manythreads-apps-guard', 'ValidatingAdmissionPolicyBinding/manythreads-apps-guard']))
+    // a suffix with the first release's namespace names would still collide
+    const noNames = renderSecond([...SECOND_SET, 'clusterScopedSuffix=second'], ['values-install.yaml']);
+    expect(noNames.code).not.toBe(0);
+    expect(noNames.err).toContain('hermesPods.namespace');
     for (const bad of ['clusterScopedSuffix=true', 'clusterScopedSuffix=Second', 'clusterScopedSuffix=a_b', 'clusterScopedSuffix=-x']) {
       const r = renderSecond([...SECOND_SET, bad]);
       expect(r.code, bad).not.toBe(0);

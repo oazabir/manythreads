@@ -7,7 +7,8 @@
     server  -> the teams' pods (port 8642, the pods' gateway) and the Kubernetes API (the controller makes and reads the pods and the apps namespaces)
     the teams' pods -> the server (MCP and API, port server.port); their way to LiteLLM (4000) is opened by templates/netpol-release.yaml already
 
-  Off by default (a namespace of its own has no default-deny); networkPolicies.leased.enabled turns it on.
+  Off by default (a namespace of its own has no default-deny); networkPolicies.leased.enabled turns it on. It does nothing without hermesPods.enabled. It covers the
+  Hermes pods only: the Claude runner pods (claudePod, off in the install profile) need their own openings before they are turned on in a walled namespace.
 */ -}}
 {{- if and .Values.networkPolicies.leased.enabled .Values.hermesPods.enabled }}
 {{- $bots := .Values.hermesPods.namespace }}

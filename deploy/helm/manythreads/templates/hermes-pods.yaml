@@ -5,6 +5,7 @@
 {{- $routing := include "manythreads.appsRouting" . }}
 {{- $csuffix := include "manythreads.clusterSuffix" . }}
 {{- $appsMark := include "manythreads.appsMark" . }}
+{{- if and $csuffix (or (eq $bots "manythreads-bots") (eq $hp.apps.prefix "apps-")) }}{{ fail "a second release (clusterScopedSuffix set) needs its own hermesPods.namespace and hermesPods.apps.prefix: manythreads-bots and apps- belong to the first release (see values-second-install.yaml)" }}{{ end }}
 # Managed Hermes pods (docs/plugins/hermes-pods.md). Three kinds of namespace, each with its own walls:
 #   {{ $rel }}        the platform itself. The controller has NO rights here.
 #   {{ $bots }}       the teams' pods (Hermes + workbench). Pod security "baseline" is enforced (no privileged pods, no hostPath, no host networking).
