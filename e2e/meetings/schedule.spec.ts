@@ -54,7 +54,7 @@ test('Nadia schedules a video meeting with Sameera of another team; both find it
   await expect(panel.getByTestId('appointment-people')).toContainText('Nadia');
   await expect(panel.getByTestId('appointment-join')).toBeEnabled();
   await panel.getByTestId('appointment-join').click();
-  await expect(sameera.page).toHaveURL(/\/meeting\//);
+  await expect(sameera.page).toHaveURL(/\/t\/customer-support\/chat\?meeting=/);
   await expect(dock(sameera)).toHaveAttribute('data-phase', 'connected', { timeout: 20_000 });
 
   await mine.click();

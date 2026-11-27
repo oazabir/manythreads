@@ -64,7 +64,7 @@ test('a stand-up in #dev is filed into team memory as a Meeting concept', async 
   expect(concept, `a Meeting concept among ${JSON.stringify(item.filed_paths)}`).toBeDefined();
   const text = await repoText(omar, 'engineering', concept!);
   expect(text).toMatch(/type:\s*Meeting/);
-  expect(text).toContain('Voice room');
+  expect(text).toContain('Call · #dev');
   // the item it was filed from names the meeting and the people who said yes
   const reference = item.filed_paths.find((p) => p.startsWith('memory/references/'));
   expect(reference).toBeDefined();
@@ -89,7 +89,7 @@ test('Add to board makes a card with the owner and the day in it', async () => {
   expect(card?.title).toBe('I will write the rollback note by 2026-11-12.');
   expect(card?.description).toContain('Owner: Nadia');
   expect(card?.description).toContain('Due: 2026-11-12');
-  expect(card?.description).toContain('Voice room');
+  expect(card?.description).toContain('Call · #dev');
 
   // and the board shows it
   await a.page.goto('/t/engineering/boards');

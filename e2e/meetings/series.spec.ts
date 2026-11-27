@@ -41,7 +41,7 @@ test('Nadia makes a weekly series, opens its first agenda and writes in it; Rafi
   await form.getByTestId('appointment-from').fill(hhmm(start));
   await form.getByTestId('appointment-to').fill(hhmm(end));
   await form.getByTestId('appointment-repeat').selectOption('weekly');
-  await expect(form.getByTestId('appointment-series-note')).toContainText("everyone on Engineering can read and edit");
+  await expect(form.getByTestId('appointment-series-note')).toContainText('everyone on Engineering can edit and the people invited can read');
   await form.getByTestId('appointment-save').click();
   await expect(form).toBeHidden();
 
