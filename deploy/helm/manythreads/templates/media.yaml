@@ -3,12 +3,14 @@
   Voice rooms (P15-00, docs/spikes/voice.md): the LiveKit media server. Off by default. The manythreads server mints short tokens and calls the room API with the
   key below (MANYTHREADS_LIVEKIT_*); LiveKit calls back http://manythreads-server/api/meetings/media-webhook, signed with the same key.
   The pod uses the node's network: the audio ports are UDP and TCP on the node itself, so no Service can carry them and the node's firewall must allow
-  rtcPortStart-rtcPortEnd (UDP) and rtcTcpPort (TCP). Signalling (7880) is plain inside the cluster; the ingress or load balancer in front of `publicUrl` does TLS.
+  rtcPortStart-rtcPortEnd (UDP), rtcTcpPort (TCP) and, with TURN on, turn.udpPort (UDP, 3478) and turn.relayPortStart-relayPortEnd (UDP). With hostNetwork the pod's ports are
+  the node's own, so none of them is listed on the pod or the Service, and no NetworkPolicy of this chart selects the pod (a pod on the host network is outside them).
+  The config file is built in templates/_helpers.tpl ("manythreads.mediaConfig"); `publicUrl` empty with `ingressPath` set means wss://<domain><ingressPath>. Signalling (7880) is plain inside the cluster; the ingress or load balancer in front of `publicUrl` does TLS.
   With media.ingressPath set (for example /livekit) the main address also carries the signalling: an Ingress sends that path to the pod and a Traefik Middleware
   takes the prefix off first (LiveKit answers on /). The audio itself never goes through the ingress: see docs/deploy.md "Voice rooms".
 */ -}}
-{{- if not .Values.media.publicUrl }}{{ fail "media.enabled needs media.publicUrl (the wss:// address browsers connect to)" }}{{ end }}
-{{- if and .Values.media.turn.enabled (not .Values.media.turn.domain) }}{{ fail "media.turn.enabled needs media.turn.domain" }}{{ end }}
+{{- $_ := include "manythreads.mediaPublicUrl" . }}
+{{- $config := include "manythreads.mediaConfig" . }}
 {{- $existing := lookup "v1" "Secret" .Release.Namespace "manythreads-media-secrets" }}
 {{- $data := dict }}
 {{- if $existing }}{{ $data = $existing.data | default dict }}{{ end }}
@@ -36,33 +38,7 @@ metadata:
     {{- include "manythreads.labels" . | nindent 4 }}
 data:
   livekit.yaml: |
-    port: 7880
-    log_level: info
-    rtc:
-      port_range_start: {{ .Values.media.rtcPortStart }}
-      port_range_end: {{ .Values.media.rtcPortEnd }}
-      tcp_port: {{ .Values.media.rtcTcpPort }}
-      {{- if .Values.media.nodeIp }}
-      # Behind NAT (a machine with no public address): the address people reach it on is not on the machine, so it is given here.
-      node_ip: {{ .Values.media.nodeIp | quote }}
-      {{- end }}
-      use_external_ip: {{ .Values.media.useExternalIp }}
-    room:
-      auto_create: false
-      empty_timeout: 300
-      max_participants: {{ .Values.media.maxParticipants }}
-    webhook:
-      api_key: __API_KEY__
-      urls:
-        - http://manythreads-server:{{ .Values.server.port }}/api/meetings/media-webhook
-    {{- if .Values.media.turn.enabled }}
-    turn:
-      enabled: true
-      domain: {{ .Values.media.turn.domain | quote }}
-      tls_port: {{ .Values.media.turn.tlsPort }}
-      udp_port: {{ .Values.media.turn.udpPort }}
-      external_tls: true
-    {{- end }}
+    {{- $config | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -82,6 +58,9 @@ spec:
       labels:
         {{- include "manythreads.labels" . | nindent 8 }}
         app.kubernetes.io/component: media
+      annotations:
+        {{- /* A changed setting (ports, TURN, addresses) restarts the pod on `helm upgrade`: LiveKit reads its file only at start. */}}
+        checksum/config: {{ $config | sha256sum }}
     spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet

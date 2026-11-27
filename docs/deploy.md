@@ -257,11 +257,42 @@ node's own ports. Nothing here needs an outside account.
 | Audio over UDP | UDP `media.rtcPortStart`-`media.rtcPortEnd` (50000-50100) | browsers | no: straight to the node |
 | Audio over TCP (when UDP is blocked) | TCP `media.rtcTcpPort` (7881) | browsers | no: straight to the node |
 | TURN over UDP (`media.turn.enabled`) | UDP `media.turn.udpPort` (3478) | browsers | no: straight to the node |
-| TURN over TLS (`media.turn.enabled`) | TCP 443 on `media.turn.domain`, forwarded to `media.turn.tlsPort` (5349) | browsers on networks that allow only HTTPS | no: a DNS-only name, never through Cloudflare's proxy |
+| TURN relay (`media.turn.enabled`) | UDP `media.turn.relayPortStart`-`media.turn.relayPortEnd` (50101-50300) | browsers, through TURN | no: straight to the node |
+| TURN over TLS (`media.turn.enabled`, `media.turn.tlsPort` above 0) | TCP 443 on `media.turn.domain`, forwarded to `media.turn.tlsPort` (5349) | browsers on networks that allow only HTTPS | no: a DNS-only name, never through Cloudflare's proxy |
 
-Values (`values.yaml`, `media:`): `publicUrl` (required when enabled), `nodeIp`, `useExternalIp`, `maxParticipants` (25), `noteTakerMaxRooms` (10, the rooms one server pod's note-taker listens
-to at once), `ingressPath`, `turn.*`, `resources`. The live release (`values-live.yaml`) sets `enabled: true`, `publicUrl: wss://manythreads.kahf.to/livekit`, `nodeIp: 10.0.2.15`,
-`useExternalIp: false`, `ingressPath: /livekit`. The chart's CI release leaves it off; CI stacks use the stand-in (`MANYTHREADS_MEDIA_PROVIDER=fake`).
+Values (`values.yaml`, `media:`): `publicUrl` (empty with `ingressPath` set means `wss://<domain><ingressPath>`, so a domain change keeps calls working; a value given always wins), `nodeIp`,
+`useExternalIp`, `advertiseInternalIp`, `maxParticipants` (25), `noteTakerMaxRooms` (10, the rooms one server pod's note-taker listens to at once), `ingressPath`, `turn.*`, `resources`.
+The live release (`values-live.yaml`) sets `enabled: true`, `publicUrl: wss://manythreads.kahf.to/livekit`, `nodeIp: 10.0.2.15`, `useExternalIp: false`, `ingressPath: /livekit`. The chart's CI
+release leaves it off; CI stacks use the stand-in (`MANYTHREADS_MEDIA_PROVIDER=fake`). The chart default is `enabled: false`; the installer (`deploy/install/install.sh`) turns calls and TURN
+on for a new install, and `values-install.yaml` does not.
+
+**TURN settings** (`media.turn.*`; the names are the chart's, and each maps to a LiveKit v1.13.11 key under `turn:`):
+- `enabled` and `domain`: TURN needs a name (`turn.example.org`); the render fails without it.
+- `udpPort` (3478, `udp_port`) and `tlsPort` (5349, `tls_port` with `external_tls: true`). **`tlsPort: 0` runs TURN over UDP only** and writes no TLS key at all: no certificate and no load balancer are needed. A single machine
+  with no load balancer in front uses `0`. A render with both ports 0 fails.
+- `relayPortStart`-`relayPortEnd` (50101-50300, `relay_range_start` and `relay_range_end`): the ports TURN opens on the machine for the far end of a relay. LiveKit's own default is 30000-40000,
+  which overlaps the k3s service ports (30000-32767), so the chart picks a range next to the audio ports. Keep it clear of `rtcPortStart`-`rtcPortEnd`. Wider = more calls through TURN at once.
+- `allowRestrictedPeerCidrs` (`allow_restricted_peer_cidrs`, empty): private networks the relay may reach. By default LiveKit refuses every private, loop-back and link-local address. A machine on a
+  private network (everyone on one office network, or the machine behind a NAT, where the relay talks to the machine's own private address) lists it, for example `["192.168.0.0/16"]`.
+- `denyPeerCidrs` (`deny_peer_cidrs`, empty): addresses the relay never reaches; it wins over the allow list. A CIDR in a wrong form fails the render (LiveKit would not start either).
+
+**Restart on change.** The media pod carries the annotation `checksum/config`, a hash of its LiveKit settings, so `helm upgrade` restarts it when a port, TURN or address setting changes (LiveKit reads its file only at start). A restart ends the calls in progress. The hash does not cover the key pair (Secret `manythreads-media-secrets`): after rotating it, restart the media pod by hand (`kubectl rollout restart deployment/manythreads-media`).
+
+**Ports to open** on the machine's firewall and the router (everything else stays closed):
+- UDP 50000-50100 (audio and video, `rtcPortStart`-`rtcPortEnd`) and TCP 7881 (the same over TCP, `rtcTcpPort`).
+- With TURN: UDP 3478 (`turn.udpPort`) and UDP 50101-50300 (`turn.relayPortStart`-`relayPortEnd`); with TURN over TLS also TCP 443 on the TURN name, forwarded to 5349.
+- **TCP 7880 must not be reachable from outside.** It is the signalling, plain HTTP and WebSocket, and browsers reach it through the main address (`/livekit`), where the ingress adds HTTPS. The media pod uses the
+  machine's network, so no Service port or NetworkPolicy is involved: the firewall is the only gate. `NOTES.txt` prints this list after an install or upgrade.
+
+**Behind a NAT, with or without loop-back.** Set `useExternalIp: true` (LiveKit asks a STUN server for the public address) on a machine with a public address or a router that forwards the ports and
+lets the machine reach its own public address from inside ("loop-back" or hairpin NAT works). If the machine cannot reach its own public address (the usual home or office router), the audio of people
+on the same network never arrives: set `advertiseInternalIp: true` so LiveKit also tells browsers the machine's own private address, and the people inside connect to that one. (LiveKit v1.13.11 has
+`advertise_internal_ip` as a yes or no; it cannot name an address, it uses the machine's own.) When the public address cannot be found by STUN, give it with `nodeIp` and `useExternalIp: false`; with
+`advertiseInternalIp: true` the private address is still told as well. Callers on other networks need the ports forwarded to the machine, and TURN covers networks that block UDP.
+
+**When TURN over TLS is needed.** TURN over UDP (3478) helps people whose network allows UDP out but blocks the audio ports. A network that allows only HTTPS (many offices, hotels, schools) needs TURN
+over TLS: a DNS-only name for the machine (`turn.example.org`; Cloudflare's proxy cannot carry it), TCP 443 on that name forwarded to `tlsPort` by a load balancer that ends TLS (`external_tls`), and
+`media.turn.tlsPort` above 0. A machine without such a load balancer leaves `tlsPort: 0`, and those networks cannot call.
 
 **The devbox has no public address.** It is a VM behind NAT (10.0.2.15), and Cloudflare's proxy carries only HTTP(S) and WebSockets, never UDP. So with this setup a call works for
 people on the machine itself (and the live checks run there), and **a call between people on different networks needs the owner to do three things at the network edge**. The app does not

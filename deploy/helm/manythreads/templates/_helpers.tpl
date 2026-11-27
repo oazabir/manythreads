@@ -127,3 +127,75 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- range (.Values.extraDomains | default list) -}}{{- if not (has . $all) -}}{{- $all = append $all . -}}{{- end -}}{{- end -}}
 {{- join "," $all -}}
 {{- end }}
+
+{{/* Voice rooms (media.yaml): the address browsers connect to. `media.publicUrl` wins; empty with `media.ingressPath` set = wss://<domain><ingressPath>, so a domain change keeps calls working. */}}
+{{- define "manythreads.mediaPublicUrl" -}}
+{{- if .Values.media.publicUrl -}}{{ .Values.media.publicUrl }}
+{{- else if .Values.media.ingressPath -}}
+{{- if or (not (hasPrefix "/" .Values.media.ingressPath)) (hasSuffix "/" .Values.media.ingressPath) }}{{ fail "media.ingressPath must start with / and not end with / (for example /livekit)" }}{{ end -}}
+wss://{{ .Values.domain }}{{ .Values.media.ingressPath }}
+{{- else -}}{{ fail "media.enabled needs media.publicUrl (the wss:// address browsers connect to), or media.ingressPath (then it is wss://<domain><ingressPath>)" }}
+{{- end -}}
+{{- end }}
+
+{{/* Voice rooms: the LiveKit server's config file (LiveKit v1.13.11 key names, checked against its config-sample.yaml). The file is also hashed into the pod's checksum/config annotation, so a changed setting restarts the pod. */}}
+{{- define "manythreads.mediaConfig" -}}
+{{- $m := .Values.media -}}
+{{- $t := $m.turn -}}
+{{- $cidr := "^[0-9a-fA-F:.]+/[0-9]{1,3}$" -}}
+{{- if and $t.enabled (not $t.domain) }}{{ fail "media.turn.enabled needs media.turn.domain (the name TURN is reached on, for example turn.example.org)" }}{{ end -}}
+{{- if and $t.enabled (le (int $t.tlsPort) 0) (le (int $t.udpPort) 0) }}{{ fail "media.turn.enabled needs media.turn.udpPort or media.turn.tlsPort (both are 0)" }}{{ end -}}
+{{- if and $t.enabled (lt (int $t.relayPortEnd) (int $t.relayPortStart)) }}{{ fail "media.turn.relayPortEnd must not be below media.turn.relayPortStart" }}{{ end -}}
+{{- if and $t.enabled (le (int $t.relayPortStart) (int $m.rtcPortEnd)) (ge (int $t.relayPortEnd) (int $m.rtcPortStart)) }}{{ fail "media.turn.relayPortStart-relayPortEnd must not overlap media.rtcPortStart-rtcPortEnd (the TURN relay and the audio need ports of their own)" }}{{ end -}}
+{{- range $p := (list $m.rtcTcpPort $t.udpPort $t.tlsPort) }}{{ if and $t.enabled (gt (int $p) 0) (le (int $t.relayPortStart) (int $p)) (ge (int $t.relayPortEnd) (int $p)) }}{{ fail (printf "media.turn.relayPortStart-relayPortEnd must not contain the port %d (rtcTcpPort, turn.udpPort or turn.tlsPort)" (int $p)) }}{{ end }}{{ end -}}
+{{- range concat ($t.allowRestrictedPeerCidrs | default list) ($t.denyPeerCidrs | default list) }}{{ if not (regexMatch $cidr (toString .)) }}{{ fail (printf "media.turn peer address lists take CIDRs such as 10.0.0.0/8 (got %q)" (toString .)) }}{{ end }}{{ end -}}
+port: 7880
+log_level: info
+rtc:
+  port_range_start: {{ $m.rtcPortStart }}
+  port_range_end: {{ $m.rtcPortEnd }}
+  tcp_port: {{ $m.rtcTcpPort }}
+  {{- if $m.nodeIp }}
+  # Behind NAT (a machine with no public address): the address people reach it on is not on the machine, so it is given here.
+  node_ip: {{ $m.nodeIp | quote }}
+  {{- end }}
+  use_external_ip: {{ $m.useExternalIp }}
+  {{- if $m.advertiseInternalIp }}
+  # Also tell browsers the machine's own (private) address, for people on the same network when the machine cannot reach its public address from inside.
+  advertise_internal_ip: true
+  {{- end }}
+room:
+  auto_create: false
+  empty_timeout: 300
+  max_participants: {{ $m.maxParticipants }}
+webhook:
+  api_key: __API_KEY__
+  urls:
+    - http://manythreads-server:{{ .Values.server.port }}/api/meetings/media-webhook
+{{- if $t.enabled }}
+turn:
+  enabled: true
+  domain: {{ $t.domain | quote }}
+  {{- if gt (int $t.udpPort) 0 }}
+  udp_port: {{ $t.udpPort }}
+  {{- end }}
+  {{- if gt (int $t.tlsPort) 0 }}
+  tls_port: {{ $t.tlsPort }}
+  external_tls: true
+  {{- end }}
+  relay_range_start: {{ $t.relayPortStart }}
+  relay_range_end: {{ $t.relayPortEnd }}
+  {{- with $t.allowRestrictedPeerCidrs }}
+  allow_restricted_peer_cidrs:
+    {{- range . }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- end }}
+  {{- with $t.denyPeerCidrs }}
+  deny_peer_cidrs:
+    {{- range . }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
