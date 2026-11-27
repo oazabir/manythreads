@@ -3,6 +3,7 @@
 {{- $rel := .Release.Namespace }}
 {{- $cidr := include "manythreads.apiServerCidr" . }}
 {{- $d := $hp.deployTargetDefaults }}
+{{- if .Values.clusterScopedSuffix }}{{ fail "a second release (clusterScopedSuffix set) makes no deploy targets: their admission rules are cluster-wide and belong to the first release" }}{{ end }}
 {{- range $i, $t := $hp.deployTargets }}
 {{- $ns := $t.namespace }}
 {{- if not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" (toString $ns)) }}{{ fail (printf "hermesPods.deployTargets[%d].namespace %q is not a valid namespace name" $i $ns) }}{{ end }}

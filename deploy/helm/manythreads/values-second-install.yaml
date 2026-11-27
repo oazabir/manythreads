@@ -1,0 +1,87 @@
+# A SECOND release on a cluster that already runs one: a fresh install (values-install.yaml) in a LEASED namespace, next to the live site.
+# docs/deploy.md, "A second release on the same cluster". Give helm the install profile first and this file second (this one wins):
+#
+#   helm upgrade --install manythreads deploy/helm/manythreads -n <leased namespace> \
+#     -f deploy/helm/manythreads/values-install.yaml -f deploy/helm/manythreads/values-second-install.yaml \
+#     --set domain=<the second site's host> --set hermesPods.apiServer.cidr=<node address>/32 \
+#     --set imageTag=<tag> --set tls.letsencrypt.email=<address> ...   (the images: see the document)
+#
+# What it carries, and nothing else (no secret, no address of a site: the domain and the Kubernetes API address are given with --set):
+#   1. names that do not collide with the first release: the namespaces of the teams' pods and of the apps, and the cluster-wide admission policy. (The chart never
+#      makes the release namespace itself: it is the lease, made and walled in by the first release.)
+#   2. the openings that the leased namespace's own walls need for managed pods (a default-deny policy in both directions), and HTTPS for its one host;
+#   3. sizes that fit a machine the first release already uses (15 GB of memory, about 7 GB of it taken) and the leased namespace's quota
+#      (6 GiB of memory requests, 8 GiB of limits, 12 GiB of volumes in 6 claims, 25 pods). Add up before you raise a number.
+#
+# To make another second install (another leased namespace), change the names in 1.: they must differ from every other release's, or helm refuses the
+# install ("exists and cannot be imported into the current release") before it has made anything.
+
+# --- 1. names -----------------------------------------------------------------------------------------------------------------------------------
+# Names the cluster-wide admission policy (`manythreads-apps-guard-second`) and the label its apps namespaces carry (manythreads.io/apps=second). The first
+# release's policy selects manythreads.io/apps=true, so it never judges this release's apps, and this one never judges the first release's.
+clusterScopedSuffix: second
+
+hermesPods:
+  # The teams' pods (baseline pod security) and the apps (`<prefix><team>`, restricted). The chart makes these namespaces and leaves them behind on `helm uninstall`.
+  namespace: test-bots
+  apps:
+    prefix: test-apps-
+  # Only the teams that will ship apps; each costs a namespace with a quota, a network wall, a service account and four traffic rules. Add one with
+  # --set 'hermesPods.appTeams={engineering,marketing}' (a list given with --set replaces this one).
+  appTeams: [engineering]
+  # A pod of a team: the install profile's 512Mi to 1536Mi is kept for the Hermes container; the workbench (builds, a browser) default is 1Gi to 4Gi per team,
+  # too much for a shared machine.
+  workbenchResources:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+# --- 2. the leased namespace's walls --------------------------------------------------------------------------------------------------------------
+networkPolicies:
+  leased:
+    enabled: true
+
+# --- HTTPS ----------------------------------------------------------------------------------------------------------------------------------------
+# Let's Encrypt for the host (the e-mail address is given with --set tls.letsencrypt.email=...). The leased namespace's admission rule allows an ACME Issuer with
+# plain HTTP-01 solvers and a certificate for the hosts named on the namespace, which is exactly what this renders.
+tls:
+  mode: letsencrypt
+  # Two Traefik stores named `default` fight over the one default certificate: the first release owns it.
+  defaultStore: false
+  wildcard: false
+
+# --- 3. sizes -------------------------------------------------------------------------------------------------------------------------------------
+server:
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  blobs:
+    persistence:
+      size: 2Gi
+      keep: false          # a test install is taken away whole: `helm uninstall` removes its files too
+  repos:
+    persistence:
+      size: 1Gi
+      keep: false
+
+postgres:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  storage:
+    size: 4Gi
+
+litellm:
+  resources:
+    requests: { cpu: 100m, memory: 768Mi }
+    limits: { memory: 1Gi }
+
+hindsight:
+  resources:
+    requests: { cpu: 100m, memory: 1Gi }
+    limits: { memory: 2Gi }
+
+backup:
+  retention: 3
+  storage:
+    size: 4Gi
+    keep: false

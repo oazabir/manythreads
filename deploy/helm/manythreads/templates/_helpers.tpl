@@ -6,6 +6,28 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- define "manythreads.pgHost" -}}manythreads-pg-rw{{- end -}}
 
 {{- /*
+  A second release on the same cluster (docs/deploy.md, "a second release on the same cluster"). Everything the chart makes outside a namespace has one name per
+  cluster, so a second release needs names of its own. `clusterScopedSuffix` is empty for the first (the live site: nothing changes there) and a short word
+  (lowercase letters, digits, dashes) for the second:
+    manythreads.clusterSuffix   "" or "-<suffix>", appended to the names of the cluster-wide admission policy and its binding
+    manythreads.appsMark        the value of the namespace label manythreads.io/apps: "true" for the first release, the suffix for the second. The
+                                admission policy of EACH release selects the apps namespaces by this label; with "true" on both, the first release's rules
+                                (its host name) would be applied to the second release's apps namespaces too, and refuse every app there.
+  The ClusterRole of the nodes reader already carries the release namespace in its name.
+*/ -}}
+{{- define "manythreads.clusterSuffix" -}}
+{{- $s := .Values.clusterScopedSuffix | default "" | toString -}}
+{{- if $s -}}
+{{- if eq $s "true" }}{{ fail "clusterScopedSuffix may not be \"true\" (it is the value the first release puts on its apps namespaces)" }}{{ end -}}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" $s) }}{{ fail (printf "clusterScopedSuffix %q must be 1 to 32 lowercase letters, digits and dashes, starting and ending with a letter or digit" $s) }}{{ end -}}
+-{{ $s }}
+{{- end -}}
+{{- end -}}
+{{- define "manythreads.appsMark" -}}
+{{- .Values.clusterScopedSuffix | default "true" | toString -}}
+{{- end -}}
+
+{{- /*
   Attachment store environment, shared by the server Deployment and the seed Job (both must name the same store).
   MANYTHREADS_STORAGE is local or s3 (anything else is a mistake that must stop the render, as it stops the server).
   The S3 credentials are Secret references, never values in the pod spec; with no Secret configured the pod's AWS credential chain applies.

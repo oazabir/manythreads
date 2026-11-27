@@ -1,0 +1,55 @@
+{{- /*
+  A release in a namespace that is walled in already (a deploy target: values-second-install.yaml, docs/deploy.md "a second release on the same cluster").
+  Such a namespace has a default-deny policy for ingress and egress, and only these openings: its own pods among themselves, DNS, the public internet on 80/443,
+  the ingress controller and the database operator in, the database pods to the Kubernetes API. That is enough for a site without managed Hermes pods. With them, two
+  more roads are needed, and this file opens exactly those (policies add up, so nothing already open is closed):
+
+    server  -> the teams' pods (port 8642, the pods' gateway) and the Kubernetes API (the controller makes and reads the pods and the apps namespaces)
+    the teams' pods -> the server (MCP and API, port server.port); their way to LiteLLM (4000) is opened by templates/netpol-release.yaml already
+
+  Off by default (a namespace of its own has no default-deny); networkPolicies.leased.enabled turns it on.
+*/ -}}
+{{- if and .Values.networkPolicies.leased.enabled .Values.hermesPods.enabled }}
+{{- $bots := .Values.hermesPods.namespace }}
+{{- $hp := .Values.hermesPods }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-server-to-pods
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: server }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $bots }} } }
+          podSelector: { matchLabels: { app.kubernetes.io/component: hermes-pod } }
+      ports:
+        - { port: 8642, protocol: TCP }
+    - to:
+        - ipBlock: { cidr: {{ include "manythreads.apiServerCidr" . }} }
+      ports:
+        - { port: {{ $hp.apiServer.port }}, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-server-from-pods
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: server }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $bots }} } }
+          podSelector: { matchLabels: { app.kubernetes.io/component: hermes-pod } }
+      ports:
+        - { port: {{ .Values.server.port }}, protocol: TCP }
+{{- end }}

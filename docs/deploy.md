@@ -357,6 +357,35 @@ Voice messages are transcribed on this server: the workspace admin switch (Setti
   (<https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx>, same licence). The Silero VAD model (<https://github.com/snakers4/silero-vad>) is **MIT**. Debian's ffmpeg in the image is a **GPL** build, run only as a separate program. The full list is `deploy/images/asr/NOTICE`, which is also
   inside the image at `/app/NOTICE`.
 
+## A second release on the same cluster
+A fresh install (`values-install.yaml`: its own database through the database operator, LiteLLM, Hindsight, the managed Hermes pods, backups, no demo seed) can run
+next to the live site on the same k3s cluster, in a namespace of its own. The live release is not touched by it, and the live chart's output does not change by one byte
+(`deploy/helm/test/second-release.test.ts` holds both). Two things belong to a cluster, not to a namespace, so a second release must name them differently:
+
+| What | First release | Second release |
+|---|---|---|
+| Namespaces of the teams' pods and apps | `hermesPods.namespace` (`manythreads-bots`), `hermesPods.apps.prefix` + team (`apps-<team>`) | set both: `test-bots`, `test-apps-` |
+| Apps admission policy and its binding | `manythreads-apps-guard` | `manythreads-apps-guard-<clusterScopedSuffix>` |
+| The label that policy selects its apps namespaces by | `manythreads.io/apps=true` | `manythreads.io/apps=<clusterScopedSuffix>` (so the first policy never judges the second release's apps, and the other way round) |
+| The reader of the machine list | `<release namespace>-manythreads-nodes-reader` | the same rule, so already different |
+
+`deploy/helm/manythreads/values-second-install.yaml` carries exactly these names, the sizes for a shared machine and the openings a walled namespace needs. It has no domain and no
+Kubernetes API address: give them with `--set domain=...` and `--set hermesPods.apiServer.cidr=<node address>/32`. The chart never makes the release namespace itself (only the
+pods and apps namespaces, which stay behind on `helm uninstall`), so a namespace someone else owns can be the home of the second release.
+
+**A leased namespace** (a deploy target of the first release, like `test-manythreads`) comes walled in: pod security `baseline` (the install profile's pods pass it: no host path,
+host network, host port, privileged container or added capability; voice rooms, which use the host network, stay off there), a quota (memory, volumes, pods), a default-deny network
+policy and an admission rule that only lets an Ingress, certificate or volume claim of the namespace's own hosts through. The file sizes the pods to that quota, turns
+`networkPolicies.leased.enabled` on (the server reaches the teams' pods and the Kubernetes API, and the teams' pods reach the server; `templates/netpol-leased.yaml`) and sets
+`tls.defaultStore=false` (two Traefik stores named `default` fight over one certificate).
+
+The release must be new in its namespace: a release named `manythreads` that is already there (an older test site) has objects of the same names, so remove it first with
+`helm uninstall`, or helm will upgrade it instead of installing a fresh one. A second release in a namespace the chart owns itself works the same way with the
+four names above changed; a second release makes no deploy targets (`hermesPods.deployTargets` fails the render when `clusterScopedSuffix` is set).
+
+To take it away: `helm uninstall manythreads -n <namespace>`, then delete what is kept on purpose: the namespaces `test-bots` and `test-apps-*`, and (if it was installed
+without the file) the volume claims. Do it by name; never by the label `manythreads.io/apps=true`, which is the first release's.
+
 ## Temporary test triggers
 During development `ops-rollout`, `ops-status` and `ops-logs` had a temporary `push:` trigger on branch
 `claude/inspiring-turing-dzp82p` (paths `deploy/.rollout-trigger`, `.status-trigger`, `.logs-trigger`) because

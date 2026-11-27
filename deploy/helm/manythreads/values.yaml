@@ -3,6 +3,10 @@ imageTag: dev
 imagePullPolicy: IfNotPresent
 
 domain: manythreads.kahf.to
+# A SECOND release on the same cluster (a fresh install next to the live one, in a namespace of its own): a short word (lowercase letters, digits, dashes) that
+# gives the objects outside any namespace names of their own: the apps admission policy and its binding (`manythreads-apps-guard-<word>`) and the label the policy
+# selects the release's apps namespaces by. Empty (the first release) = the names every existing install already has. values-second-install.yaml sets it.
+clusterScopedSuffix: ""
 # More names that reach the same site and share its certificate (a custom name mapped later with `manythreads set-domain`, or the address name an install started with).
 extraDomains: []
 # Public base URL (links in mails, OIDC redirect URIs; Secure cookies follow it). Empty = https://<domain>.
@@ -409,6 +413,11 @@ networkPolicies:
     server:
       enabled: false
       extraCidrs: []
+  # The release namespace is itself a walled namespace (a deploy target: a default-deny policy in both directions, only the public internet on 80/443, DNS and its
+  # own pods). Policies add up, so this adds what a release with managed Hermes pods needs in such a namespace (templates/netpol-leased.yaml): the server reaches the
+  # teams' pods (8642) and the Kubernetes API, and the teams' pods reach the server (MCP, API) and LiteLLM. OFF: a namespace of its own has no default-deny.
+  leased:
+    enabled: false
 
 # Managed Hermes pods ("mode B", docs/plugins/hermes-pods.md): the platform runs one pod per team (`hermes-<team>`) holding the team's bots.
 # The server's hermes-pods plugin creates and updates them through the Kubernetes API (a ServiceAccount of its own with a Role in THIS

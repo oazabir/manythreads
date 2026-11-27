@@ -3,6 +3,8 @@
 {{- $bots := $hp.namespace }}
 {{- $rel := .Release.Namespace }}
 {{- $routing := include "manythreads.appsRouting" . }}
+{{- $csuffix := include "manythreads.clusterSuffix" . }}
+{{- $appsMark := include "manythreads.appsMark" . }}
 # Managed Hermes pods (docs/plugins/hermes-pods.md). Three kinds of namespace, each with its own walls:
 #   {{ $rel }}        the platform itself. The controller has NO rights here.
 #   {{ $bots }}       the teams' pods (Hermes + workbench). Pod security "baseline" is enforced (no privileged pods, no hostPath, no host networking).
@@ -191,7 +193,7 @@ metadata:
   name: {{ $ns }}
   labels:
     app.kubernetes.io/part-of: manythreads
-    manythreads.io/apps: "true"
+    manythreads.io/apps: {{ $appsMark | quote }}
     manythreads.io/team: {{ $team | quote }}
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/warn: restricted
@@ -429,11 +431,11 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
-  name: manythreads-apps-guard
+  name: manythreads-apps-guard{{ $csuffix }}
 spec:
   failurePolicy: Fail
   matchConstraints:
-    namespaceSelector: { matchLabels: { manythreads.io/apps: "true" } }
+    namespaceSelector: { matchLabels: { manythreads.io/apps: {{ $appsMark | quote }} } }
     resourceRules:
       - apiGroups: ["networking.k8s.io"]
         apiVersions: ["v1"]
@@ -493,9 +495,9 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
-  name: manythreads-apps-guard
+  name: manythreads-apps-guard{{ $csuffix }}
 spec:
-  policyName: manythreads-apps-guard
+  policyName: manythreads-apps-guard{{ $csuffix }}
   validationActions: [Deny]
 {{- end }}
 {{- end }}
