@@ -26,6 +26,10 @@ step and choice without root and without changing anything.
 | `--release-url URL`, `--version X.Y.Z`, `--chart REF` | which release, which chart |
 | `--insecure-release-url` | allow a release URL that starts with `http://` (a test network only; `https://` and a local file are the only forms accepted otherwise; also `manythreads upgrade` and `uninstall`) |
 | `--public-ip ADDR` | when the lookup of the public address is not possible |
+| `--calls` | turn calls on where the installer would ask first (behind Cloudflare) |
+| `--no-calls` | leave calls out of this install |
+| `--calls-network KIND` | `public`, `nat` or `local`: say what kind of network the machine is on instead of letting the installer test it (default `auto`) |
+| `--no-firewall` | do not open the call ports in this machine's firewall; the exact lines are printed instead |
 | `--kubeconfig FILE` | use an existing cluster; k3s is not installed |
 | `--upgrade`, `--uninstall`, `--yes`, `--print-plan` | see `--help` |
 
@@ -59,11 +63,55 @@ Installed at `/usr/local/bin/manythreads` (checked against `hostCommandSha256` o
 | `logs [server\|web\|litellm\|hindsight\|db]`, `support-bundle` | logs; a bundle for a bug report (no secret in it) |
 | `set-domain NAME` | change the address: asks for a certificate for the new one; the old name keeps working only when it is a name (a bare address has no certificate of its own and warns in the browser) |
 | `allow-git-host URL` | let team pods clone from one more git host |
+| `calls enable [--calls] [--calls-network KIND] [--public-ip ADDR] [--no-firewall]` | turn calls and TURN on for an install that has none, or move the call address after the machine's address changed; the same detection as a new install; downloads the installer of the release and checks it like `upgrade`; safe to run again |
+| `calls check` | call health, one `PASS:` or `FAIL:` line each, exit code 1 when one fails; prints no key or token (see "Checking calls") |
 | `upgrade [--version X.Y.Z]` | a backup first, then the new release over the old one; a lower version is refused; the installer it downloads is checked against `installSha256` of the release |
 | `uninstall` | removes manythreads (asks for the word `delete`); downloads the installer of the release it was installed from and checks it the same way; removes only the namespaces the installer labelled as its own (`app.kubernetes.io/part-of=manythreads`), never by name |
 
-State: `/etc/manythreads/install.env` (what was chosen), `values.yaml` (read on every upgrade), `domain.yaml`, `git-hosts.yaml`; the chart used is kept in `/var/lib/manythreads/chart`.
+State: `/etc/manythreads/install.env` (what was chosen), `values.yaml` (read on every upgrade), `calls.yaml` (written by `calls enable`), `domain.yaml`, `git-hosts.yaml`; the chart used is kept in `/var/lib/manythreads/chart`.
 The log is `/var/log/manythreads-install.log`; no password is ever written there.
+
+## Calls
+
+A new install turns on voice and video calls with their TURN relay when the machine can carry them. The choice is written into the install's own `/etc/manythreads/values.yaml`
+(never into the chart's `values-install.yaml`: every upgrade applies that file, and an install that has no call address would fail to upgrade). **An upgrade never changes
+calls on an install that exists**; `sudo manythreads calls enable` is how an older install gets them. The install prints what it found and why, and `--calls-network` overrides it.
+
+What is written for a machine that gets calls: `media.enabled: true`, `media.ingressPath: /livekit` (the signalling goes through the site's own address, `wss://<address>/livekit`),
+`media.nodeIp` (the address browsers send audio to), `media.useExternalIp: false`, and TURN on over UDP 3478 without TLS (`media.turn.tlsPort: 0`).
+
+| Machine | How it is recognised | What is added to the call address |
+|---|---|---|
+| (a) a public address | the public address is on the machine itself, or the machine can reach itself by it (a router that loops back) | the public address only |
+| (b) behind a router that cannot reach itself by its public address | a public address was found, the machine's own address is private, and a test connection to the public address failed (or could not be run) | the public address, plus the private address (`media.advertiseInternalIp: true`), and the relay may reach it (`media.turn.allowRestrictedPeerCidrs: [<private address>/32]`) |
+| (c) a local network only | no public address was found | the machine's private address, and the relay may reach it (`allowRestrictedPeerCidrs` with that /32); calls work for people on the same network |
+| (d) plain HTTP (`--tls none`) | | **calls stay off**: browsers block the camera and the microphone on a page without HTTPS. The install says so; use HTTPS and run `calls enable` |
+| (e) behind Cloudflare (`--tls cloudflare`, or the name points at Cloudflare) | | **asked first**: the audio goes straight to this machine, so a call tells everyone in it the server's real address. With no keyboard (a pipe, or `--yes`) calls stay off unless `--calls` is given |
+
+The "can the machine reach itself" test connects to the machine's own public address on port 443 (during a first install it answers on that port for a few seconds itself). When it
+cannot be run the machine is treated as (b), which also works where a router does loop back.
+
+**Ports** (on the machine, and on a provider's network firewall or security group if there is one):
+
+| Port | What |
+|---|---|
+| UDP 3478 | TURN |
+| UDP 50000-50100 | audio |
+| UDP 50101-50300 | TURN's relay |
+| TCP 7881 | audio over TCP when UDP is blocked |
+| TCP 7880 | LiveKit's signalling: **not opened to anyone**; it is reached only through the site's `/livekit` path (the pods may reach it from the pod network, 10.42.0.0/16 on k3s) |
+
+The installer looks at the firewall first and acts only on one that is active: `ufw`, then `firewalld`, then `iptables` rules. A port that is open already is left alone. With no
+active firewall no call port is opened (nothing here blocks them), and 7880 is closed to outsiders with one `iptables` rule that lets only the pods and the machine itself
+in (it is lost at a restart unless your system saves iptables; `calls enable` puts it back, and `calls check` says when it is missing). With `--no-firewall` nothing is changed and
+the exact lines for your tool are printed. A provider's network firewall cannot be seen from the machine: open the ports there yourself.
+
+### Checking calls
+
+`sudo manythreads calls check` prints one line each, `PASS:` or `FAIL:`, and exits with 1 when any fails: the media pod is ready; the signalling answers at `wss://<address>/livekit`
+through the ingress; TURN answers on UDP 3478; each firewall port above is open; TCP 7880 is not open to outsiders; the configured call address is still the machine's address;
+the server has the call address and key and reaches the media pod. It prints no key or token. It tests from the machine itself: a call between two different networks is the real
+test, and from another machine `nc -zv <address> 7880` must fail.
 
 ## The first password
 

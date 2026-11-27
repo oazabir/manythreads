@@ -146,6 +146,7 @@ If you lose the link before using it, restart the server (`kubectl -n manythread
 - Backups, copying them off the machine and the restore drill: [backup.md](backup.md).
 - Metrics, alerts and traces: [monitoring.md](monitoring.md).
 - A machine with no internet: [air-gapped.md](air-gapped.md).
+- Voice and video calls on this k3s: the one-command installer does it for you ([install.md](install.md#calls)); by hand, set `media.enabled`, `media.ingressPath: /livekit`, `media.nodeIp` and `media.turn.*` (docs/deploy.md "Voice rooms") and open UDP 3478, 50000-50100, 50101-50300 and TCP 7881 on the machine, never TCP 7880.
 
 ## Run the test yourself
 

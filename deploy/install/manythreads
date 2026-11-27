@@ -11,12 +11,14 @@
 #   manythreads logs [server|web|litellm|hindsight|db|...]   the last lines of a part (default: the server)
 #   manythreads set-domain NAME              serve the site at NAME too (a name whose DNS points here), with a Let's Encrypt certificate; the old address keeps working
 #   manythreads allow-git-host URL           let a team copy repositories from another git host (for example your own GitLab); https:// only
+#   manythreads calls enable [--calls] [--calls-network public|nat|local|auto] [--no-firewall]   turn calls (voice and video rooms, TURN) on for an install that has none, or move their address; safe to run again
+#   manythreads calls check                  call health: the media pod, the signalling through the ingress, TURN, each firewall port, 7880 closed to outsiders, the call address; PASS/FAIL lines, exit 1 on a FAIL
 #   manythreads upgrade [--version X.Y.Z]    install the newest release (or that one) over this one, after a backup
 #   manythreads uninstall [args]             remove manythreads (asks for the word delete; see install.sh --help for the arguments)
 #   manythreads support-bundle               a file of logs and pod states, with secrets removed, to send to whoever helps you
 #   manythreads version
 #
-# Files: /etc/manythreads/values.yaml (what install.sh chose), /etc/manythreads/install.env (the state), /etc/manythreads/domain.yaml (written by set-domain),
+# Files: /etc/manythreads/values.yaml (what install.sh chose), /etc/manythreads/install.env (the state), /etc/manythreads/domain.yaml (written by set-domain), /etc/manythreads/calls.yaml (calls enable),
 # /var/lib/manythreads/chart (the chart of the installed release).
 
 set -euo pipefail
@@ -37,6 +39,8 @@ admin_cli() { server_exec pnpm --filter @manythreads/server admin "$@"; }
 
 helm_apply() {
   local files=(-f "$VAR/chart/values-install.yaml" -f "$ETC/values.yaml")
+  # calls.yaml (`manythreads calls enable`) before domain.yaml: set-domain moves the call address
+  [ ! -f "$ETC/calls.yaml" ] || files+=(-f "$ETC/calls.yaml")
   [ ! -f "$ETC/domain.yaml" ] || files+=(-f "$ETC/domain.yaml")
   [ ! -f "$ETC/git-hosts.yaml" ] || files+=(-f "$ETC/git-hosts.yaml")
   helm upgrade --install "$RELEASE" "$VAR/chart" -n "$NS" "${files[@]}" --timeout 15m
@@ -162,6 +166,8 @@ cmd_set_domain() {
       [ -z "$extra" ] || echo "$extra"
       echo 'publicUrl: ""'
       printf 'tls:\n  mode: letsencrypt\n  wildcard: false\n  letsencrypt:\n    email: %s\n    server: %s\n' "$email" "$1"
+      # calls follow the name: the signalling address is made from the domain by the chart; TURN's name is given here
+      [ "$(state CALLS)" != 1 ] || printf 'media:\n  turn:\n    domain: %s\n' "$name"
     } >"$ETC/domain.yaml"
   }
   cp -f "$ETC/domain.yaml" "$ETC/domain.yaml.before" 2>/dev/null || true
@@ -240,6 +246,173 @@ cmd_uninstall() {
   bash "$tmp/install.sh" --uninstall ${rest[@]+"${rest[@]}"}
 }
 
+# ---- calls (voice and video rooms) ------------------------------------------------------------------------------------------------------------------------------------
+# The ports calls use on this machine (proto:range); TCP 7880 is LiveKit's signalling and is reached only through https://<address>/livekit.
+CALLS_PORTS=(udp:3478 udp:50000-50100 udp:50101-50300 tcp:7881)
+POD_CIDR=${MANYTHREADS_POD_CIDR:-10.42.0.0/16}
+
+# `calls enable`: runs the installer of this release (checked against release.json, like upgrade) in its --calls-enable mode, so the detection of the machine is the installer's.
+cmd_calls_enable() {
+  local url tmp insecure="${MANYTHREADS_INSECURE_RELEASE_URL:-0}" pass=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --calls|--no-firewall) pass+=("$1") ;;
+      --calls-network|--public-ip)
+        [ $# -ge 2 ] || die "$1 needs a value"
+        if [ "$1" = --calls-network ]; then case "$2" in auto|public|nat|local) ;; *) die "--calls-network wants auto, public, nat or local" ;; esac; fi
+        pass+=("$1" "$2"); shift ;;
+      --insecure-release-url) insecure=1 ;;
+      *) die "unknown option $1 (calls enable takes --calls, --calls-network public|nat|local|auto, --public-ip ADDR, --no-firewall)" ;;
+    esac
+    shift
+  done
+  url=$(state RELEASE_URL); [ -n "$url" ] || die "this install does not remember where releases are published; run install.sh --calls-enable --release-url <address>"
+  tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+  fetch_checked_installer "$url" "$tmp" "$insecure"
+  MANYTHREADS_INSECURE_RELEASE_URL="$insecure" bash "$tmp/install.sh" --calls-enable --release-url "$url" ${pass[@]+"${pass[@]}"}
+}
+
+fw_kind() { # ufw | firewalld | iptables | none: the first one that is active
+  if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -qi '^Status: active'; then echo ufw; return 0; fi
+  if command -v firewall-cmd >/dev/null && [ "$(firewall-cmd --state 2>/dev/null)" = running ]; then echo firewalld; return 0; fi
+  if command -v iptables >/dev/null && iptables -S INPUT 2>/dev/null | grep -v -e '--dport 7880' | grep -Eq -e '^-P INPUT (DROP|REJECT)' -e ' -j (DROP|REJECT)'; then echo iptables; return 0; fi
+  echo none
+}
+fw_allows() { # kind proto range -> 0 when that port is allowed
+  local kind="$1" proto="$2" range="$3" colon="${3/-/:}"
+  case "$kind" in
+    ufw) ufw status 2>/dev/null | grep -Eq "^(${range}|${colon})(/${proto})?[[:space:]]+ALLOW" ;;
+    firewalld) firewall-cmd --list-ports 2>/dev/null | tr ' ' '\n' | grep -qx "$range/$proto" ;;
+    iptables) iptables -C INPUT -p "$proto" --dport "$colon" -j ACCEPT 2>/dev/null ;;
+    *) return 0 ;;
+  esac
+}
+# TCP 7880 from outside: 0 = closed by a rule or by the way it listens, 1 = open, 2 = cannot tell
+port7880_closed() { # kind
+  local kind="$1" listen
+  listen=$(ss -H -ltn 'sport = :7880' 2>/dev/null | awk '{print $4}' | head -n1)
+  case "$listen" in 127.0.0.1:*|'[::1]:'*) return 0 ;; esac
+  # the installer's own rule (a DROP for 7880 that lets the pods and this machine in) closes it whichever tool is active
+  if command -v iptables >/dev/null && iptables -C INPUT -p tcp --dport 7880 -j DROP 2>/dev/null; then return 0; fi
+  case "$kind" in
+    ufw)
+      ufw status 2>/dev/null | grep -Eq '^7880(/tcp)?[[:space:]]+ALLOW[[:space:]]+Anywhere' && return 1
+      return 0 ;;
+    firewalld)
+      firewall-cmd --list-ports 2>/dev/null | tr ' ' '\n' | grep -qx '7880/tcp' && return 1
+      return 0 ;;
+    iptables)
+      iptables -C INPUT -p tcp --dport 7880 -j DROP 2>/dev/null && return 0
+      iptables -S INPUT 2>/dev/null | grep -q '^-P INPUT DROP' && return 0
+      return 1 ;;
+  esac
+  return 1
+}
+# A STUN request to a UDP port of this machine; 0 when it answers (needs python3; 2 when that is missing)
+stun_answers() { # host port
+  command -v python3 >/dev/null || return 2
+  python3 - "$1" "$2" <<'PY' 2>/dev/null
+import socket, sys, os
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(3)
+s.sendto(b"\x00\x01\x00\x00\x21\x12\xa4\x42" + os.urandom(12), (sys.argv[1], int(sys.argv[2])))
+data, _ = s.recvfrom(2048)
+sys.exit(0 if len(data) >= 20 and data[0:2] == b"\x01\x01" else 1)
+PY
+}
+detected_public_ip() {
+  [ -z "${MANYTHREADS_DETECTED_PUBLIC_IP+x}" ] || { printf '%s' "$MANYTHREADS_DETECTED_PUBLIC_IP"; return 0; }
+  local ip url
+  for url in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com; do
+    ip=$(curl -fsS --max-time 8 "$url" 2>/dev/null | tr -d '[:space:]') || ip=''
+    [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && { printf '%s' "$ip"; return 0; }
+  done
+  return 0
+}
+detected_local_ip() {
+  [ -z "${MANYTHREADS_DETECTED_LOCAL_IP+x}" ] || { printf '%s' "$MANYTHREADS_DETECTED_LOCAL_IP"; return 0; }
+  ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n1 # secret-scan:ignore well-known resolver used only to find the route
+}
+
+# `calls check`: plain PASS / FAIL lines, the exit code is 1 when one fails. It never prints a key or a token.
+cmd_calls_check() {
+  local fails=0 host kind e proto range ready code cfg pub loc
+  host=$(state HOST)
+  pass() { printf 'PASS: %s\n' "$*"; }
+  fail() { printf 'FAIL: %s\n' "$*"; fails=$((fails + 1)); }
+  note() { printf '      %s\n' "$*"; }
+  if ! kubectl -n "$NS" get deploy manythreads-media >/dev/null 2>&1; then
+    fail "calls are not turned on here (there is no media pod). Turn them on with: sudo manythreads calls enable"
+    return 1
+  fi
+  ready=$(kubectl -n "$NS" get deploy manythreads-media -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)
+  if [ "${ready:-0}" -ge 1 ] 2>/dev/null; then pass "the media pod is ready"
+  else fail "the media pod is not ready (kubectl -n $NS describe pod -l app.kubernetes.io/component=media; manythreads logs media)"; fi
+
+  # signalling through the ingress: this machine asks its own ingress for https://<address>/livekit/ (LiveKit answers "OK" on its root)
+  code=$(curl -sk --max-time 10 --resolve "$host:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://$host/livekit/" 2>/dev/null || true)
+  if [ "$code" = 200 ]; then pass "the signalling answers at wss://$host/livekit through the ingress"
+  else fail "https://$host/livekit/ answered ${code:-nothing} (expected 200): the Ingress or the Traefik middleware of the media pod is missing (kubectl -n $NS get ingress,middleware)"; fi
+
+  # TURN over UDP
+  local turn_rc=0
+  if ss -H -lun 'sport = :3478' 2>/dev/null | grep -q .; then
+    stun_answers 127.0.0.1 3478 || turn_rc=$?
+    case "$turn_rc" in
+      0) pass "TURN answers on UDP 3478 on this machine" ;;
+      2) pass "something listens on UDP 3478 (python3 is not installed, so the answer was not tested)" ;;
+      *) fail "something listens on UDP 3478 but it does not answer a STUN request (manythreads logs media)" ;;
+    esac
+  else fail "nothing listens on UDP 3478: TURN is off or the media pod is not running (values: media.turn.enabled)"; fi
+
+  # the firewall, port by port
+  kind=$(fw_kind)
+  for e in "${CALLS_PORTS[@]}"; do
+    proto=${e%%:*}; range=${e#*:}
+    if [ "$kind" = none ]; then pass "${proto^^} $range: no firewall on this machine blocks it (a provider's network firewall cannot be seen from here: check it there)"
+    elif fw_allows "$kind" "$proto" "$range"; then pass "${proto^^} $range is open in $kind"
+    else fail "${proto^^} $range is not open in $kind (run: sudo manythreads calls enable, or open it yourself)"; fi
+  done
+  if port7880_closed "$kind"; then pass "TCP 7880 (LiveKit's signalling) is not open to outsiders"
+  else
+    fail "TCP 7880 (LiveKit's signalling) is open to everyone who can reach this machine; it is meant to be reached only through https://$host/livekit"
+    note "close it with: sudo manythreads calls enable (or: iptables -I INPUT -p tcp --dport 7880 -j DROP, with accepts for the pods ($POD_CIDR) and lo above it)"
+  fi
+  note "from another machine, this must fail: nc -zv <this machine's address> 7880"
+
+  # the address the browsers are told against what this machine looks like now
+  cfg=$(kubectl -n "$NS" get cm manythreads-media-config -o jsonpath='{.data.livekit\.yaml}' 2>/dev/null | sed -n 's/^ *node_ip: *"\{0,1\}\([^" ]*\)"\{0,1\}.*/\1/p' | head -n1 || true)
+  [ -n "$cfg" ] || cfg=$(state CALLS_NODE_IP)
+  if [ -z "$cfg" ]; then fail "no call address (media.nodeIp) is set: browsers get the address LiveKit finds by itself"
+  else
+    pub=$(detected_public_ip); loc=$(detected_local_ip)
+    if [ "$cfg" = "$pub" ] || [ "$cfg" = "$loc" ]; then pass "the call address $cfg is this machine's address ($( [ "$cfg" = "$pub" ] && echo public || echo local ))"
+    elif [ -z "$pub" ]; then pass "the call address $cfg was not compared: this machine's public address could not be looked up (its local address is ${loc:-unknown})"
+    else fail "the call address is $cfg but this machine's address is $pub (public) and ${loc:-unknown} (local): run sudo manythreads calls enable (add --public-ip ADDR when the lookup finds an address that is not the one people reach you on)"; fi
+  fi
+
+  # the server's side: it has the media address and key, and reaches the media pod (the key itself is not printed)
+  if kubectl -n "$NS" exec deploy/manythreads-server -- node -e "
+const e=process.env;
+if(!e.MANYTHREADS_LIVEKIT_URL||!e.MANYTHREADS_LIVEKIT_API_KEY||!e.MANYTHREADS_LIVEKIT_API_SECRET) process.exit(3);
+fetch((e.MANYTHREADS_LIVEKIT_API_URL||'http://manythreads-media:7880')+'/').then(r=>process.exit(r.ok?0:4)).catch(()=>process.exit(5));" >/dev/null 2>&1; then
+    pass "the server has the call address and key, and reaches the media pod"
+  else fail "the server cannot use the media pod (no address or key in its environment, or the pod does not answer): kubectl -n $NS rollout status deploy/manythreads-server; manythreads logs server"; fi
+
+  if [ "$fails" -eq 0 ]; then say "Calls look fine from this machine. A call between two networks is the real test: start one."; return 0; fi
+  say "$fails check(s) failed."
+  return 1
+}
+
+cmd_calls() {
+  local sub="${1:-}"; [ $# -eq 0 ] || shift
+  need_install
+  case "$sub" in
+    enable) cmd_calls_enable "$@" ;;
+    check) cmd_calls_check "$@" ;;
+    *) die "usage: manythreads calls enable [--calls] [--calls-network public|nat|local|auto] [--public-ip ADDR] [--no-firewall]   |   manythreads calls check" ;;
+  esac
+}
+
 cmd_support_bundle() {
   need_root support-bundle; need_install
   local dir out; dir=$(mktemp -d); out="/tmp/manythreads-support-$(date +%Y%m%d-%H%M%S).tgz"
@@ -267,7 +440,7 @@ cmd_version() { say "manythreads $(state VERSION)"; }
 main() {
   local c="${1:-}"; [ $# -eq 0 ] || shift
   case "$c" in
-    status|url|admin-password|reset-admin-password|backup-key|doctor|logs|set-domain|allow-git-host|upgrade|uninstall|support-bundle|version)
+    status|url|admin-password|reset-admin-password|backup-key|doctor|logs|set-domain|allow-git-host|calls|upgrade|uninstall|support-bundle|version)
       case "$c" in version) ;; *) need_root "$c" ;; esac
       "cmd_${c//-/_}" "$@" ;;
     ''|-h|--help|help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' ;;
