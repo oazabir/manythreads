@@ -90,6 +90,10 @@ describe.skipIf(!haveHelm)('calls and TURN (media.*)', () => {
     const bad = renderRaw('base', [CIDR, ...ON, ...TURN, 'media.turn.denyPeerCidrs={nonsense}']);
     expect(bad.code).not.toBe(0);
     expect(bad.err).toContain('CIDR');
+    for (const wrong of ['192.168.0.0/99', '999.1.1.1/8', '10.1.2.3', 'fd00::/200']) {
+      expect(renderRaw('base', [CIDR, ...ON, ...TURN, `media.turn.denyPeerCidrs={${wrong}}`]).code, wrong).not.toBe(0);
+    }
+    expect(livekit(base(...ON, ...TURN, 'media.turn.allowRestrictedPeerCidrs={fd00::/8,172.16.0.0/12,10.1.2.3/32}'))).toContain('"fd00::/8"');
   });
 
   it('advertiseInternalIp writes advertise_internal_ip next to nodeIp', () => {
@@ -116,6 +120,33 @@ describe.skipIf(!haveHelm)('calls and TURN (media.*)', () => {
     expect(checksum(base(...ON, ...TURN, 'media.turn.tlsPort=0'))).not.toBe(a);
     expect(checksum(base(...ON))).not.toBe(a);
     expect(checksum(base(...ON, 'media.nodeIp=10.0.2.15'))).not.toBe(checksum(base(...ON)));
+  });
+
+  it('the /livekit Ingress covers every name of the site, like the main Ingress: a second domain gets the rule, one name is unchanged, a bare IP has no host', () => {
+    const ing = (docs: K8sDoc[], name: string): K8sDoc => docs.find((d) => d.kind === 'Ingress' && d.metadata.name === name)!;
+    const hosts = (d: K8sDoc): (string | undefined)[] => (d['spec'].rules as { host?: string }[]).map((r) => r.host);
+    const one = base(...ON, 'domain=chat.example.test');
+    expect(hosts(ing(one, 'manythreads-media'))).toEqual(['chat.example.test']);
+    expect(ing(one, 'manythreads-media')['spec'].rules[0].http.paths).toEqual([{ path: '/livekit', pathType: 'Prefix', backend: { service: { name: 'manythreads-media', port: { name: 'signal' } } } }]);
+    const two = base(...ON, 'domain=chat.example.test', 'extraDomains={other.example.test,chat.example.test}');
+    expect(hosts(ing(two, 'manythreads-media'))).toEqual(hosts(ing(two, 'manythreads')));
+    expect(hosts(ing(two, 'manythreads-media'))).toEqual(['chat.example.test', 'other.example.test']);
+    const second = (ing(two, 'manythreads-media')['spec'].rules as { host: string; http: { paths: { path: string; backend: unknown }[] } }[])[1]!;
+    expect(second.http.paths[0]).toMatchObject({ path: '/livekit', backend: { service: { name: 'manythreads-media' } } });
+    // the strip-prefix Middleware is named by the Ingress, so it applies to the rule of the second domain too
+    expect(ing(two, 'manythreads-media').metadata.annotations!['traefik.ingress.kubernetes.io/router.middlewares']).toBe('manythreads-manythreads-media-strip@kubernetescrd');
+    expect(two.some((d) => d.kind === 'Middleware' && d.metadata.name === 'manythreads-media-strip' && d['spec'].stripPrefix.prefixes[0] === '/livekit')).toBe(true);
+    // a bare IP address: one rule with no host (an Ingress cannot match on an address), as the main Ingress has
+    const ip = base(...ON, 'domain=10.0.0.5');
+    expect(hosts(ing(ip, 'manythreads-media'))).toEqual([undefined]);
+    expect(hosts(ing(ip, 'manythreads'))).toEqual([undefined]);
+  });
+
+  it('with a certificate the media Ingress names the same hosts as the main one', () => {
+    const docs = base(...ON, 'domain=chat.example.test', 'extraDomains={other.example.test}', 'tls.mode=letsencrypt', 'tls.wildcard=false', 'hermesPods.apps.routing=path');
+    const tlsOf = (name: string) => docs.find((d) => d.kind === 'Ingress' && d.metadata.name === name)!['spec'].tls;
+    expect(tlsOf('manythreads-media')).toEqual(tlsOf('manythreads'));
+    expect(tlsOf('manythreads-media')[0].hosts).toEqual(['chat.example.test', 'other.example.test']);
   });
 
   it('the pod stays on the host network and signalling is the only Service port', () => {

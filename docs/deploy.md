@@ -276,6 +276,11 @@ on for a new install, and `values-install.yaml` does not.
   private network (everyone on one office network, or the machine behind a NAT, where the relay talks to the machine's own private address) lists it, for example `["192.168.0.0/16"]`.
 - `denyPeerCidrs` (`deny_peer_cidrs`, empty): addresses the relay never reaches; it wins over the allow list. A CIDR in a wrong form fails the render (LiveKit would not start either).
 
+**A second name for the site.** The app builds the call address from the host the page was opened on (`wss://<that host>/livekit`; `docs/plugins/meetings.md`, "The address a call connects to follows the page"). So the `/livekit`
+route must exist for every name that reaches the site: the chart's media Ingress carries the same names as the main one, `domain` first and then every name in `extraDomains` (with the same certificate hosts), and the
+Traefik `Middleware` that takes the prefix off applies to all of them. Add the name to `extraDomains` and calls work on it at the next `helm upgrade`. When `domain` is a bare IP address both Ingresses have one rule with no host,
+which answers whatever address the visitor typed. A host the main Ingress does not answer for (a local IP while `domain` is a name) reaches nothing, the site included, so it needs no media rule of its own.
+
 **Restart on change.** The media pod carries the annotation `checksum/config`, a hash of its LiveKit settings, so `helm upgrade` restarts it when a port, TURN or address setting changes (LiveKit reads its file only at start). A restart ends the calls in progress. The hash does not cover the key pair (Secret `manythreads-media-secrets`): after rotating it, restart the media pod by hand (`kubectl rollout restart deployment/manythreads-media`).
 
 **Ports to open** on the machine's firewall and the router (everything else stays closed):

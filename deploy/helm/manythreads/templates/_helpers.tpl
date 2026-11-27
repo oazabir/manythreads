@@ -142,13 +142,14 @@ wss://{{ .Values.domain }}{{ .Values.media.ingressPath }}
 {{- define "manythreads.mediaConfig" -}}
 {{- $m := .Values.media -}}
 {{- $t := $m.turn -}}
-{{- $cidr := "^[0-9a-fA-F:.]+/[0-9]{1,3}$" -}}
+{{- $cidr4 := "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/(3[0-2]|[12]?[0-9])$" -}}
+{{- $cidr6 := "^[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/(12[0-8]|1[01][0-9]|[1-9]?[0-9])$" -}}
 {{- if and $t.enabled (not $t.domain) }}{{ fail "media.turn.enabled needs media.turn.domain (the name TURN is reached on, for example turn.example.org)" }}{{ end -}}
 {{- if and $t.enabled (le (int $t.tlsPort) 0) (le (int $t.udpPort) 0) }}{{ fail "media.turn.enabled needs media.turn.udpPort or media.turn.tlsPort (both are 0)" }}{{ end -}}
 {{- if and $t.enabled (lt (int $t.relayPortEnd) (int $t.relayPortStart)) }}{{ fail "media.turn.relayPortEnd must not be below media.turn.relayPortStart" }}{{ end -}}
 {{- if and $t.enabled (le (int $t.relayPortStart) (int $m.rtcPortEnd)) (ge (int $t.relayPortEnd) (int $m.rtcPortStart)) }}{{ fail "media.turn.relayPortStart-relayPortEnd must not overlap media.rtcPortStart-rtcPortEnd (the TURN relay and the audio need ports of their own)" }}{{ end -}}
 {{- range $p := (list $m.rtcTcpPort $t.udpPort $t.tlsPort) }}{{ if and $t.enabled (gt (int $p) 0) (le (int $t.relayPortStart) (int $p)) (ge (int $t.relayPortEnd) (int $p)) }}{{ fail (printf "media.turn.relayPortStart-relayPortEnd must not contain the port %d (rtcTcpPort, turn.udpPort or turn.tlsPort)" (int $p)) }}{{ end }}{{ end -}}
-{{- range concat ($t.allowRestrictedPeerCidrs | default list) ($t.denyPeerCidrs | default list) }}{{ if not (regexMatch $cidr (toString .)) }}{{ fail (printf "media.turn peer address lists take CIDRs such as 10.0.0.0/8 (got %q)" (toString .)) }}{{ end }}{{ end -}}
+{{- range concat ($t.allowRestrictedPeerCidrs | default list) ($t.denyPeerCidrs | default list) }}{{ if not (or (regexMatch $cidr4 (toString .)) (regexMatch $cidr6 (toString .))) }}{{ fail (printf "media.turn peer address lists take CIDRs such as 10.0.0.0/8 (got %q)" (toString .)) }}{{ end }}{{ end -}}
 port: 7880
 log_level: info
 rtc:

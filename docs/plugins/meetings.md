@@ -224,8 +224,9 @@ A **link guest** is someone outside the workspace with no account (not a workspa
   `HttpRequest.origin`, made by the server from Fastify's `protocol` and `host`, which read `X-Forwarded-Proto` and `X-Forwarded-Host` only from the proxies
   `MANYTHREADS_TRUST_PROXY` names (no new trust; the web image's nginx now sends `X-Forwarded-Host` with the port the person typed, because its `Host` has none); a host that is not a plain `host[:port]` is dropped and the configured address is used. On the site's own host nothing is rewritten, and without `MANYTHREADS_PUBLIC_URL` nothing is either. The proxy in front must say `X-Forwarded-Proto` for a second name to get `wss`. An address on a host of its own
   (`wss://media.example.org`, or a path on a host other than the site's) is returned as it is. The note-taker's listener is not affected (it connects from the server with
-  `MANYTHREADS_LIVEKIT_LISTEN_URL`). For a second domain to work, the ingress must also send `/livekit` to the media pod for that domain (the chart lists the media
-  Ingress under `domain` only; a name that is not on that list reaches the site, not the media server). A guest link is made from `MANYTHREADS_PUBLIC_URL`, so guests open
+  `MANYTHREADS_LIVEKIT_LISTEN_URL`). The ingress must also send `/livekit` to the media pod for every name that reaches the site: the chart's media Ingress
+  carries the same names as the main one (`domain` and `extraDomains`, and a rule with no host when `domain` is a bare IP address), so a second domain added with
+  `extraDomains` works with no further step. A host the main Ingress does not answer for (a local IP while `domain` is a name) reaches nothing, the site included. A guest link is made from `MANYTHREADS_PUBLIC_URL`, so guests open
   the site through that name. Tests: `sdk/test/media-address.test.ts`, `meetings/test/join-address.test.ts`, `meetings/test/join-address-world.test.ts`.
 - **Still to do:** visual baselines of the guest's question and of the links list.
 

@@ -153,9 +153,13 @@ spec:
   {{- if .Values.ingress.className }}
   ingressClassName: {{ .Values.ingress.className }}
   {{- end }}
+  {{- /* The same names as the main Ingress (templates/ingress.yaml): the page's own host is where the app builds the call address from (wss://<page host>/livekit), so every name that reaches the site must also send the path to the media pod. */}}
+  {{- $ipHost := regexMatch "^[0-9.]+$" .Values.domain }}
   {{- if $tlsSecret }}
   tls:
-    - hosts: [{{ .Values.domain }}]
+    - {{- if not $ipHost }}
+      hosts: [{{ include "manythreads.allDomains" . | splitList "," | join ", " }}]
+      {{- end }}
       secretName: {{ $tlsSecret }}
   {{- else if and (eq $tlsMode "none") .Values.ingress.tls.enabled }}
   tls:
@@ -165,12 +169,28 @@ spec:
       {{- end }}
   {{- end }}
   rules:
+    {{- /* A bare address is not a name an Ingress may match on: the rule then has no host and answers whatever the visitor typed (as the main Ingress does). */}}
+    {{- if $ipHost }}
+    - http:
+    {{- else }}
     - host: {{ .Values.domain }}
+      http:
+    {{- end }}
+        paths:
+          - path: {{ $path }}
+            pathType: Prefix
+            backend:
+              service: { name: manythreads-media, port: { name: signal } }
+    {{- range .Values.extraDomains | default list }}
+    {{- if ne . $.Values.domain }}
+    - host: {{ . }}
       http:
         paths:
           - path: {{ $path }}
             pathType: Prefix
             backend:
               service: { name: manythreads-media, port: { name: signal } }
+    {{- end }}
+    {{- end }}
 {{- end }}
 {{- end }}
