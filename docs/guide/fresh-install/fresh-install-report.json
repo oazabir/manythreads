@@ -1,0 +1,359 @@
+{
+  "startedAt": "2026-11-27T10:13:52.668Z",
+  "updatedAt": "2026-11-27T10:21:30.631Z",
+  "totalSeconds": 458,
+  "site": "[hidden]",
+  "summary": {
+    "pass": 23,
+    "fail": 2,
+    "skipped": 15
+  },
+  "steps": [
+    {
+      "n": 1,
+      "id": "sign-in",
+      "title": "Sign in with the installer password and choose a new one",
+      "status": "pass",
+      "seconds": 8,
+      "note": "the password was already changed; signed in with the new one"
+    },
+    {
+      "n": 2,
+      "id": "wizard",
+      "title": "The setup wizard opens with its thirteen steps",
+      "status": "pass",
+      "seconds": 2.2,
+      "note": "13 steps"
+    },
+    {
+      "n": 3,
+      "id": "bootstrap",
+      "title": "Step 1: the first sign-in is done",
+      "status": "pass",
+      "seconds": 3,
+      "note": "done from the fact that the first admin signed in"
+    },
+    {
+      "n": 4,
+      "id": "theme",
+      "title": "Step 2: the look",
+      "status": "pass",
+      "seconds": 4.2,
+      "note": "tried Harbor, kept Classic"
+    },
+    {
+      "n": 5,
+      "id": "organization",
+      "title": "Step 3: the organization",
+      "status": "pass",
+      "seconds": 1.9,
+      "note": "already named"
+    },
+    {
+      "n": 6,
+      "id": "infrastructure",
+      "title": "Step 4: the address and HTTPS",
+      "status": "pass",
+      "seconds": 1.9,
+      "note": "served over HTTPS"
+    },
+    {
+      "n": 7,
+      "id": "models",
+      "title": "Step 5: the models (the key is entered here, then each alias is tested)",
+      "status": "pass",
+      "seconds": 1.9,
+      "note": "smart already answered a test"
+    },
+    {
+      "n": 8,
+      "id": "signin-policy",
+      "title": "Step 6: how people sign in",
+      "status": "pass",
+      "seconds": 2.1,
+      "note": "already decided"
+    },
+    {
+      "n": 9,
+      "id": "teams",
+      "title": "Step 7: the teams (every template is made)",
+      "status": "pass",
+      "seconds": 2.7,
+      "note": "5 templates, all made"
+    },
+    {
+      "n": 10,
+      "id": "servers",
+      "title": "Step 8: this machine as a server",
+      "status": "skipped",
+      "seconds": 1.4,
+      "reason": "not provable on this machine without breaking the live bridge: this [hidden] already runs the bridge for another site and the bridge keeps one connection per machine; needs a second machine"
+    },
+    {
+      "n": 11,
+      "id": "runners",
+      "title": "Step 9: the Hermes pod answers a real question",
+      "status": "pass",
+      "seconds": 2.8,
+      "note": "a runner already answered a real question"
+    },
+    {
+      "n": 12,
+      "id": "runner-claude-make",
+      "title": "The Claude Code pod runner",
+      "status": "pass",
+      "seconds": 1.8,
+      "note": "the runner claude already exists"
+    },
+    {
+      "n": 13,
+      "id": "runner-claude-upload",
+      "title": "The Claude Code sign-in file goes in through the Runners page",
+      "status": "pass",
+      "seconds": 1.4,
+      "note": "a sign-in file is already uploaded"
+    },
+    {
+      "n": 14,
+      "id": "runner-codex-make",
+      "title": "The Codex pod runner",
+      "status": "pass",
+      "seconds": 1.8,
+      "note": "the runner codex already exists"
+    },
+    {
+      "n": 15,
+      "id": "runner-codex-upload",
+      "title": "The Codex sign-in file goes in through the Runners page",
+      "status": "pass",
+      "seconds": 2,
+      "note": "a sign-in file is already uploaded"
+    },
+    {
+      "n": 16,
+      "id": "bots",
+      "title": "Step 10: where bots run",
+      "status": "pass",
+      "seconds": 2.3,
+      "note": "bots have a default runner"
+    },
+    {
+      "n": 17,
+      "id": "bot-host",
+      "title": "A bot on this machine (Hermes on the host)",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"servers\", which was skipped"
+    },
+    {
+      "n": 18,
+      "id": "ask-channel-host",
+      "title": "A question in a channel to the host bot",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-host\", which was skipped"
+    },
+    {
+      "n": 19,
+      "id": "ask-dm-host",
+      "title": "A direct message to the host bot",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-host\", which was skipped"
+    },
+    {
+      "n": 20,
+      "id": "memory-host",
+      "title": "The host bot remembers a fact told in another message",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-host\", which was skipped"
+    },
+    {
+      "n": 21,
+      "id": "bot-pod",
+      "title": "A bot on the Hermes pod",
+      "status": "pass",
+      "seconds": 10.2,
+      "note": "already placed on hermes; the runner was ready 10 s after the bot was placed and the bot first answered 6 s after that (1 tries)"
+    },
+    {
+      "n": 22,
+      "id": "ask-channel-pod",
+      "title": "A question in a channel to the pod bot",
+      "status": "pass",
+      "seconds": 10.6,
+      "note": "answered in 6.3 s"
+    },
+    {
+      "n": 23,
+      "id": "ask-dm-pod",
+      "title": "A direct message to the pod bot",
+      "status": "pass",
+      "seconds": 11.7,
+      "note": "answered in 6.4 s"
+    },
+    {
+      "n": 24,
+      "id": "memory-pod",
+      "title": "The pod bot remembers a fact told in another message",
+      "status": "pass",
+      "seconds": 63.3,
+      "note": "told in a channel, asked in a DM, answered in 34.7 s"
+    },
+    {
+      "n": 25,
+      "id": "bot-claude",
+      "title": "A bot on the Claude Code pod",
+      "status": "fail",
+      "seconds": 136.7,
+      "reason": "claude did not answer journey-claude within 120 s (10 tries; the last thing it said: I couldn't answer: this bot's Hermes is unreachable. Try again once it is back; if it stays down, tell a lead of this team.)"
+    },
+    {
+      "n": 26,
+      "id": "ask-channel-claude",
+      "title": "A question in a channel to the claude bot",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-claude\", which failed"
+    },
+    {
+      "n": 27,
+      "id": "ask-dm-claude",
+      "title": "A direct message to the claude bot",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-claude\", which failed"
+    },
+    {
+      "n": 28,
+      "id": "memory-claude",
+      "title": "The claude bot remembers a fact told in another message",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-claude\", which failed"
+    },
+    {
+      "n": 29,
+      "id": "code-claude",
+      "title": "A small coding task for the claude bot",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-claude\", which failed"
+    },
+    {
+      "n": 30,
+      "id": "bot-codex",
+      "title": "A bot on the Codex pod",
+      "status": "fail",
+      "seconds": 136.2,
+      "reason": "codex did not answer journey-codex within 120 s (10 tries; the last thing it said: I couldn't answer: this bot's Hermes is unreachable. Try again once it is back; if it stays down, tell a lead of this team.)"
+    },
+    {
+      "n": 31,
+      "id": "ask-channel-codex",
+      "title": "A question in a channel to the codex bot",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-codex\", which failed"
+    },
+    {
+      "n": 32,
+      "id": "ask-dm-codex",
+      "title": "A direct message to the codex bot",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-codex\", which failed"
+    },
+    {
+      "n": 33,
+      "id": "memory-codex",
+      "title": "The codex bot remembers a fact told in another message",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-codex\", which failed"
+    },
+    {
+      "n": 34,
+      "id": "code-codex",
+      "title": "A small coding task for the codex bot",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"bot-codex\", which failed"
+    },
+    {
+      "n": 35,
+      "id": "runners-page",
+      "title": "The Runners page: every pod and its state",
+      "status": "pass",
+      "seconds": 1.7,
+      "note": "3 runners: hermes=ready, claude=ready, codex=ready"
+    },
+    {
+      "n": 36,
+      "id": "code",
+      "title": "Step 11: the starter repository is connected",
+      "status": "skipped",
+      "seconds": 1.1,
+      "reason": "no starter repository given (JOURNEY_STARTER_REPO)"
+    },
+    {
+      "n": 37,
+      "id": "launch",
+      "title": "Step 12: Brain answers with sources",
+      "status": "pass",
+      "seconds": 2,
+      "note": "Brain answered"
+    },
+    {
+      "n": 38,
+      "id": "delivery",
+      "title": "Step 13: the first delivery (the Engineer to a pull request)",
+      "status": "skipped",
+      "seconds": 0,
+      "reason": "needs \"code\", which was skipped"
+    },
+    {
+      "n": 39,
+      "id": "wizard-end",
+      "title": "The wizard at the end",
+      "status": "pass",
+      "seconds": 1.7,
+      "note": "still open: servers, code, delivery"
+    },
+    {
+      "n": 40,
+      "id": "phone",
+      "title": "The same pages at 390 by 844, light and dark",
+      "status": "pass",
+      "seconds": 41.2,
+      "note": "16 pages, none scrolls sideways"
+    }
+  ],
+  "answers": [
+    {
+      "runner": "pod",
+      "where": "channel",
+      "seconds": 6.3
+    },
+    {
+      "runner": "pod",
+      "where": "dm",
+      "seconds": 6.4
+    },
+    {
+      "runner": "pod",
+      "where": "channel",
+      "seconds": 19.9
+    },
+    {
+      "runner": "pod",
+      "where": "dm",
+      "seconds": 34.7
+    }
+  ],
+  "screenshots": {
+    "desktop": 32,
+    "phone": 19
+  }
+}
