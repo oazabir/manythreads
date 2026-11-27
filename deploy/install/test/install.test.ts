@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -459,5 +459,589 @@ exit 0`,
     expect(listing).not.toContain('abcdefghijklmnop1234');
     expect(listing).not.toContain('A'.repeat(50));
     expect(listing).toContain('<removed>');
+  });
+});
+
+/**
+ * P38-10: calls and TURN on a new install (docs/deploy/install.md "Calls"). The machine is described to the installer through stand-in commands and environment
+ * variables (MANYTHREADS_CALLS_LOOPBACK, MANYTHREADS_DOMAIN_IPS, MANYTHREADS_CALLS_ANSWER); nothing is looked up on the network and no real firewall is touched.
+ */
+const PUB = '203.0.113.10'; // secret-scan:ignore documentation address used as a test fixture
+const LAN = '10.0.0.5'; // secret-scan:ignore private test fixture
+const CF_IP = '104.16.1.1'; // secret-scan:ignore a Cloudflare range address used as a test fixture
+
+describe('calls: what each machine type gets', () => {
+  const plan = (net: string, mode: string, pub: string, local: string, loop: string) => bash(`plan_calls '${mode}' '${pub}' '${local}' '${net}' '${loop}'`).out;
+  it('(a) a public address on the machine, or a router that loops back: the address only', () => {
+    expect(plan('auto', 'letsencrypt', PUB, PUB, 'unknown')).toMatch(new RegExp(`^public ${PUB} - `));
+    expect(plan('auto', 'letsencrypt', PUB, LAN, 'yes')).toMatch(new RegExp(`^public ${PUB} - `));
+    expect(plan('auto', 'letsencrypt', '', '198.51.100.7', 'unknown')).toMatch(/^public 198\.51\.100\.7 - /); // secret-scan:ignore test fixture
+  });
+  it('(b) a router that cannot loop back (or cannot be tested): the private address too', () => {
+    expect(plan('auto', 'letsencrypt', PUB, LAN, 'no')).toMatch(new RegExp(`^nat ${PUB} ${LAN} .*cannot reach itself`));
+    expect(plan('auto', 'selfsigned', PUB, LAN, 'unknown')).toMatch(new RegExp(`^nat ${PUB} ${LAN} .*could not be tested`));
+  });
+  it('a machine with no usable address gets no calls and is told to give one', () => {
+    expect(plan('auto', 'letsencrypt', '', '127.0.0.1', 'unknown')).toMatch(/^off - - no usable address .*--public-ip/);
+    expect(plan('auto', 'letsencrypt', '', '', 'unknown')).toMatch(/^off - - no usable address/);
+  });
+  it('(c) a local network only: that one private address', () => {
+    expect(plan('auto', 'selfsigned', '', LAN, 'unknown')).toMatch(new RegExp(`^local ${LAN} - `));
+  });
+  it('(d) plain HTTP is off, whatever else is said', () => {
+    expect(plan('auto', 'none', PUB, PUB, 'yes')).toMatch(/^off - - plain HTTP: browsers block the camera and the microphone/);
+    expect(plan('public', 'none', PUB, PUB, 'yes')).toMatch(/^off /);
+  });
+  it('the override decides: public, nat (needs a public address), local', () => {
+    expect(plan('public', 'letsencrypt', PUB, LAN, 'no')).toMatch(new RegExp(`^public ${PUB} - you said`));
+    expect(plan('nat', 'letsencrypt', PUB, LAN, 'yes')).toMatch(new RegExp(`^nat ${PUB} ${LAN} you said`));
+    expect(plan('nat', 'letsencrypt', '', LAN, 'yes')).toMatch(/^off .*--public-ip/);
+    expect(plan('local', 'letsencrypt', PUB, LAN, 'yes')).toMatch(new RegExp(`^local ${LAN} - you said`));
+  });
+  it('knows Cloudflare\'s addresses and a site behind them', () => {
+    const cf = (ip: string) => bash(`is_cloudflare_ip '${ip}' && echo yes || echo no`).out;
+    expect([cf(CF_IP), cf('172.67.1.1'), cf(PUB), cf('8.8.8.8'), cf('abc')]).toEqual(['yes', 'yes', 'no', 'no', 'no']); // secret-scan:ignore test fixtures
+    const behind = (mode: string, host: string, ips: string) => bash(`behind_cloudflare '${mode}' '${host}' && echo yes || echo no`, { MANYTHREADS_DOMAIN_IPS: ips }).out;
+    expect(behind('cloudflare', 'a.example.com', '')).toBe('yes');
+    expect(behind('letsencrypt', 'a.example.com', CF_IP)).toBe('yes');
+    expect(behind('letsencrypt', 'a.example.com', PUB)).toBe('no');
+    expect(behind('letsencrypt', '203-0-113-10.sslip.io', CF_IP)).toBe('no');
+    expect(behind('selfsigned', PUB, CF_IP)).toBe('no');
+  });
+});
+
+describe('calls: the values written and the questions asked', () => {
+  const decide = (flag: string, net: string, mode: string, host: string, pub: string, local: string, env: Record<string, string> = {}) =>
+    bash(`CALLS_FLAG=${flag}; CALLS_NET=${net}; decide_calls '${mode}' '${host}' '${pub}' '${local}' >/dev/null; echo "$CALLS_ON|$CALLS_TYPE|$CALLS_NODE_IP|$CALLS_INTERNAL_IP|$CALLS_REASON"`, { MANYTHREADS_CALLS_LOOPBACK: 'no', MANYTHREADS_DOMAIN_IPS: PUB, ...env }).out.split('\n').pop() ?? '';
+  it('--no-calls and --tls none are off with their reason', () => {
+    expect(decide('off', 'auto', 'letsencrypt', 'a.example.com', PUB, LAN)).toBe('0|off|||you chose --no-calls');
+    expect(decide('on', 'auto', 'none', PUB, PUB, PUB)).toMatch(/^0\|off\|\|\|plain HTTP/);
+    expect(bash(`CALLS_FLAG=auto; CALLS_NET=auto; decide_calls none ${PUB} ${PUB} ${PUB}`).out).toContain('sudo manythreads calls enable');
+  });
+  it('behind Cloudflare: asked first, off when nobody answers, on with --calls or a yes', () => {
+    const cfEnv = { MANYTHREADS_DOMAIN_IPS: CF_IP };
+    expect(decide('auto', 'auto', 'letsencrypt', 'a.example.com', PUB, LAN, cfEnv)).toMatch(/^0\|off\|\|\|behind Cloudflare/);
+    expect(decide('auto', 'auto', 'cloudflare', 'a.example.com', PUB, LAN, { MANYTHREADS_CALLS_ANSWER: 'no' })).toMatch(/^0\|off/);
+    expect(decide('auto', 'auto', 'cloudflare', 'a.example.com', PUB, LAN, { MANYTHREADS_CALLS_ANSWER: 'yes' })).toMatch(new RegExp(`^1\\|nat\\|${PUB}\\|${LAN}\\|`));
+    expect(decide('on', 'auto', 'cloudflare', 'a.example.com', PUB, LAN)).toMatch(/^1\|nat\|/);
+    // --yes never answers it
+    expect(bash(`YES=1; CALLS_FLAG=auto; CALLS_NET=auto; decide_calls cloudflare a.example.com ${PUB} ${LAN}; echo "$CALLS_ON"`, { MANYTHREADS_DOMAIN_IPS: CF_IP }).out).toMatch(/\n0$/);
+    expect(bash(`CALLS_FLAG=auto; CALLS_NET=auto; decide_calls cloudflare a.example.com ${PUB} ${LAN}`, { MANYTHREADS_DOMAIN_IPS: CF_IP }).out).toContain('reveal');
+  });
+  it('the values: public has the address; nat advertises the private address and lets the relay reach it; local lets the relay reach its one address', () => {
+    const v = (t: string, n: string, i: string) => bash(`calls_values ${t} ${n} '${i}' team.example.com`).out;
+    const pub = v('public', PUB, '');
+    expect(pub).toContain('media:\n  enabled: true');
+    expect(pub).toContain('  ingressPath: /livekit');
+    expect(pub).toContain(`  nodeIp: ${PUB}`);
+    expect(pub).toContain('  useExternalIp: false');
+    expect(pub).toContain('    enabled: true\n    domain: team.example.com\n    tlsPort: 0');
+    expect(pub).not.toContain('advertiseInternalIp');
+    expect(pub).not.toContain('allowRestrictedPeerCidrs');
+    const nat = v('nat', PUB, LAN);
+    expect(nat).toContain('  advertiseInternalIp: true');
+    expect(nat).toContain(`    allowRestrictedPeerCidrs: [${LAN}/32]`);
+    expect(nat).toContain(`  nodeIp: ${PUB}`);
+    const local = v('local', LAN, '');
+    expect(local).toContain(`  nodeIp: ${LAN}`);
+    expect(local).toContain(`    allowRestrictedPeerCidrs: [${LAN}/32]`);
+    expect(local).not.toContain('advertiseInternalIp');
+  });
+  it('write_values puts the calls block in the install\'s own file, after the images, and nothing else changes', () => {
+    if (!haveJq) return;
+    const rel = join(tmp, 'release.json');
+    writeFileSync(rel, JSON.stringify(release()));
+    const a = join(tmp, 'a.yaml');
+    const b = join(tmp, 'b.yaml');
+    expect(bash(`write_values "${a}" "${rel}" letsencrypt team.example.com - me@example.com staging true ""`).code).toBe(0);
+    expect(bash(`write_values "${b}" "${rel}" letsencrypt team.example.com - me@example.com staging true "" "$(calls_values public ${PUB} '' team.example.com)"`).code).toBe(0);
+    const fa = readFileSync(a, 'utf8');
+    const fb = readFileSync(b, 'utf8');
+    expect(fa).not.toContain('media:');
+    const body = (t: string) => t.split('\n').filter((l) => !l.startsWith('#'));
+    const at = body(fb).indexOf('media:');
+    expect(at).toBeGreaterThan(0);
+    expect(body(fb).slice(0, at)).toEqual(body(fa).filter((l) => l !== ''));
+    expect(fb).toContain('\nmedia:\n  enabled: true');
+    expect(readFileSync(join(chart, 'values-install.yaml'), 'utf8')).toContain('media:\n  enabled: false');
+  });
+  it.skipIf(!haveJq || !haveHelm)('each machine type renders with the real chart: signalling on the main address, TURN without TLS, the relay may reach the private address', () => {
+    const rel = join(tmp, 'release.json');
+    writeFileSync(rel, JSON.stringify(release()));
+    const render = (type: string, node: string, internal: string) => {
+      const out = join(tmp, `${type}.yaml`);
+      const w = bash(`write_values "${out}" "${rel}" letsencrypt team.example.com - me@example.com staging true "" "$(calls_values ${type} ${node} '${internal}' team.example.com)"`);
+      expect(w.code, w.err).toBe(0);
+      const r = spawnSync('helm', ['template', 'manythreads', chart, '-n', 'manythreads', '-f', join(chart, 'values-install.yaml'), '-f', out, '--set', 'hermesPods.apiServer.cidr=10.0.2.15/32'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+      expect(r.status, r.stderr).toBe(0);
+      return r.stdout;
+    };
+    for (const [t, n, i] of [['public', PUB, ''], ['nat', PUB, LAN], ['local', LAN, '']] as const) {
+      const rendered = render(t, n, i);
+      expect(rendered, t).toContain('name: manythreads-media');
+      expect(rendered, t).toContain(`node_ip: "${n}"`);
+      expect(rendered, t).toContain('/livekit');
+      expect(rendered, t).toContain('MANYTHREADS_LIVEKIT_URL, value: "wss://team.example.com/livekit"');
+      expect(rendered, t).not.toContain('tls_port');
+      if (t !== 'public') expect(rendered, t).toContain(`${i || n}/32`);
+    }
+    expect(render('nat', PUB, LAN)).toContain('advertise_internal_ip');
+  });
+});
+
+describe('calls: the firewall', () => {
+  const lines = (kind: string) => bash(`firewall_lines ${kind}`).out;
+  it('prints the exact lines for each tool: the four call ports, and 7880 for the pods only', () => {
+    expect(lines('ufw')).toContain('ufw allow 3478/udp');
+    expect(lines('ufw')).toContain('ufw allow 50000:50100/udp');
+    expect(lines('ufw')).toContain('ufw allow 50101:50300/udp');
+    expect(lines('ufw')).toContain('ufw allow 7881/tcp');
+    expect(lines('ufw')).toContain('ufw allow from 10.42.0.0/16 to any port 7880 proto tcp');
+    expect(lines('ufw')).not.toMatch(/ufw allow 7880/);
+    expect(lines('firewalld')).toContain('firewall-cmd --permanent --add-port=50101-50300/udp');
+    expect(lines('firewalld')).toContain('firewall-cmd --reload');
+    expect(lines('iptables')).toContain('iptables -I INPUT -p udp --dport 50000:50100 -j ACCEPT');
+    expect(lines('iptables')).toContain('iptables -I INPUT -p tcp --dport 7880 -j DROP');
+  });
+});
+
+describe.skipIf(!haveJq)('calls: a whole install on a stand-in machine', () => {
+  const calls = (): string => (existsSync(join(tmp, 'calls.log')) ? readFileSync(join(tmp, 'calls.log'), 'utf8') : '');
+  const file = (f: string): string => readFileSync(join(tmp, f), 'utf8');
+  /** Stand-ins for the cluster and the firewall tools: every call is recorded, nothing real is touched (a real `iptables` here would change this machine). */
+  function machine(src: string): void {
+    for (const c of ['helm', 'k3s']) stub(c, `echo "${c} $*" >>"${tmp}/calls.log"; exit 0`);
+    stub('kubectl', `echo "kubectl $*" >>"${tmp}/calls.log"; case "$*" in *certificate*) printf True ;; esac; exit 0`);
+    stub('sleep', 'exit 0');
+    stub('openssl', 'cat >/dev/null; printf x');
+    stub('curl', 'exit 22');
+    stub('ip', `echo "1.1.1.1 via 10.0.0.1 dev eth0 src ${src} uid 0"`); // secret-scan:ignore test fixture
+    stub('ufw', `case "$1" in status) echo "Status: \${FAKE_UFW:-inactive}"; [ -z "\${FAKE_UFW_RULES:-}" ] || printf '%b\\n' "$FAKE_UFW_RULES" ;; *) echo "ufw $*" >>"${tmp}/calls.log" ;; esac; exit 0`);
+    stub('firewall-cmd', `case "$*" in *--query-source*) exit 1 ;; --state) echo "\${FAKE_FWD:-not running}"; [ "\${FAKE_FWD:-}" = running ] ;; --list-ports) echo "\${FAKE_FWD_PORTS:-}" ;; *) echo "firewall-cmd $*" >>"${tmp}/calls.log" ;; esac`);
+    stub('iptables', `case "$1" in -S) echo "-P INPUT \${FAKE_IPT_POLICY:-ACCEPT}" ;; -C) exit 1 ;; *) echo "iptables $*" >>"${tmp}/calls.log" ;; esac; exit 0`);
+    // a chart folder, a release that names the host command by its SHA-256
+    mkdirSync(join(tmp, 'chartdir'), { recursive: true });
+    writeFileSync(join(tmp, 'chartdir/values-install.yaml'), '');
+    mkdirSync(join(tmp, 'rel'), { recursive: true });
+    writeFileSync(join(tmp, 'rel/manythreads'), readFileSync(host));
+    const sha = spawnSync('sha256sum', [join(tmp, 'rel/manythreads')], { encoding: 'utf8' }).stdout.split(' ')[0] ?? '';
+    writeFileSync(join(tmp, 'rel/release.json'), JSON.stringify(release({ hostCommandSha256: sha })));
+  }
+  const install = (args: string[], env: Record<string, string> = {}) =>
+    runInstall(['--release-url', join(tmp, 'rel/release.json'), '--chart', join(tmp, 'chartdir'), '--admin-email', 'me@example.com', ...args], {
+      MANYTHREADS_INSTALL_FOR_TESTS: '1',
+      MANYTHREADS_HOST_COMMAND: join(tmp, 'mt'),
+      MANYTHREADS_DOMAIN_IPS: PUB,
+      ...env,
+    });
+  const state = (): string => file('etc/install.env');
+
+  it('(a) a public address on the machine: the address, TURN without TLS, state says on', () => {
+    machine(PUB);
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB]);
+    expect(r.code, r.err).toBe(0);
+    const v = file('etc/values.yaml');
+    expect(v).toContain(`media:\n  enabled: true`);
+    expect(v).toContain(`  nodeIp: ${PUB}`);
+    expect(v).toContain('  ingressPath: /livekit');
+    expect(v).toContain('    tlsPort: 0');
+    expect(v).not.toContain('advertiseInternalIp');
+    expect(state()).toContain('CALLS=1');
+    expect(state()).toContain('CALLS_TYPE=public');
+    expect(r.out).toContain('Machine type "public"');
+    expect(r.out).toContain('Calls:     on (public)');
+    expect(readFileSync(join(chart, 'values-install.yaml'), 'utf8')).toContain('media:\n  enabled: false'); // the profile is not touched
+    expect(calls()).toContain('rollout status deploy/manythreads-media');
+  });
+  it('(b) behind a router that cannot loop back: both addresses, the relay may reach the private one', () => {
+    machine(LAN);
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB], { MANYTHREADS_CALLS_LOOPBACK: 'no' });
+    expect(r.code, r.err).toBe(0);
+    const v = file('etc/values.yaml');
+    expect(v).toContain(`  nodeIp: ${PUB}`);
+    expect(v).toContain('  advertiseInternalIp: true');
+    expect(v).toContain(`    allowRestrictedPeerCidrs: [${LAN}/32]`);
+    expect(state()).toContain('CALLS_TYPE=nat');
+    expect(r.out).toContain('cannot reach itself');
+  });
+  it('a router that loops back is the same as a public address', () => {
+    machine(LAN);
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB], { MANYTHREADS_CALLS_LOOPBACK: 'yes' });
+    expect(r.code, r.err).toBe(0);
+    expect(file('etc/values.yaml')).not.toContain('advertiseInternalIp');
+    expect(state()).toContain('CALLS_TYPE=public');
+  });
+  it('(c) a local network only: the private address', () => {
+    machine(LAN);
+    const r = install(['--tls', 'selfsigned']);
+    expect(r.code, r.err).toBe(0);
+    const v = file('etc/values.yaml');
+    expect(v).toContain(`  nodeIp: ${LAN}`);
+    expect(v).toContain(`    allowRestrictedPeerCidrs: [${LAN}/32]`);
+    expect(state()).toContain('CALLS_TYPE=local');
+  });
+  it('--calls-network overrides what was found', () => {
+    machine(LAN);
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB, '--calls-network', 'local']);
+    expect(r.code, r.err).toBe(0);
+    expect(file('etc/values.yaml')).toContain(`  nodeIp: ${LAN}`);
+    expect(runInstall(['--calls-network', 'maybe', '--print-plan']).err).toContain('--calls-network wants');
+  });
+  it('an existing cluster (--kubeconfig) gets no calls unless --calls is given: it may not have Traefik', () => {
+    machine(PUB);
+    writeFileSync(join(tmp, 'kc'), 'x');
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB, '--kubeconfig', join(tmp, 'kc'), '--yes']);
+    expect(r.code, r.err).toBe(0);
+    expect(file('etc/values.yaml')).not.toContain('media:');
+    expect(r.out).toContain('--kubeconfig');
+  });
+  it('--no-calls leaves everything out: no media values, no firewall, state off', () => {
+    machine(PUB);
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB, '--no-calls'], { FAKE_UFW: 'active' });
+    expect(r.code, r.err).toBe(0);
+    expect(file('etc/values.yaml')).not.toContain('media:');
+    expect(state()).toContain('CALLS=0');
+    expect(calls()).not.toContain('ufw allow');
+    expect(calls()).not.toContain('manythreads-media');
+    expect(r.out).toContain('Calls:     off (you chose --no-calls)');
+  });
+  it('(d) --tls none leaves calls off and says why, even with --calls', () => {
+    machine(PUB);
+    const r = install(['--tls', 'none', '--public-ip', PUB, '--calls']);
+    expect(r.code, r.err).toBe(0);
+    expect(file('etc/values.yaml')).not.toContain('media:');
+    expect(r.out).toContain('plain HTTP');
+    expect(r.out).toContain('Calls:     off');
+    expect(calls()).not.toContain('iptables');
+  });
+  it('(e) behind Cloudflare: off when nobody can be asked, on with --calls or a yes, off with a no', () => {
+    machine(LAN);
+    writeFileSync(join(tmp, 'o.pem'), 'x');
+    const cf = ['--tls', 'cloudflare', '--domain', 'team.example.com', '--origin-cert', join(tmp, 'o.pem'), '--origin-key', join(tmp, 'o.pem'), '--public-ip', PUB];
+    const off = install(cf, { MANYTHREADS_CALLS_LOOPBACK: 'no' });
+    expect(off.code, off.err).toBe(0);
+    expect(off.out).toContain("reveal");
+    expect(file('etc/values.yaml')).not.toContain('media:');
+    expect(state()).toContain('CALLS=0');
+    rmSync(join(tmp, 'etc'), { recursive: true });
+    const yes = install(cf, { MANYTHREADS_CALLS_LOOPBACK: 'no', MANYTHREADS_CALLS_ANSWER: 'yes' });
+    expect(yes.code, yes.err).toBe(0);
+    expect(file('etc/values.yaml')).toContain('media:\n  enabled: true');
+    rmSync(join(tmp, 'etc'), { recursive: true });
+    const flag = install([...cf, '--calls'], { MANYTHREADS_CALLS_LOOPBACK: 'no' });
+    expect(flag.code, flag.err).toBe(0);
+    expect(file('etc/values.yaml')).toContain('media:\n  enabled: true');
+    rmSync(join(tmp, 'etc'), { recursive: true });
+    const no = install(cf, { MANYTHREADS_CALLS_LOOPBACK: 'no', MANYTHREADS_CALLS_ANSWER: 'no' });
+    expect(file('etc/values.yaml')).not.toContain('media:');
+    expect(no.code, no.err).toBe(0);
+  });
+  it('ufw active: opens each missing call port, the pods may reach 7880, 7880 is not opened', () => {
+    machine(PUB);
+    const rules = '3478/udp ALLOW Anywhere\\nDefault: deny (incoming), allow (outgoing)';
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB], { FAKE_UFW: 'active', FAKE_UFW_RULES: rules });
+    expect(r.code, r.err).toBe(0);
+    const c = calls();
+    expect(c).not.toContain('ufw allow 3478/udp'); // open already
+    for (const l of ['ufw allow 50000:50100/udp', 'ufw allow 50101:50300/udp', 'ufw allow 7881/tcp', 'ufw allow from 10.42.0.0/16 to any port 7880 proto tcp']) expect(c).toContain(l);
+    expect(c).not.toMatch(/ufw allow 7880/);
+    expect(c).not.toContain('ufw deny 7880'); // the default already denies
+    expect(r.out).toContain('UDP 3478: open already');
+  });
+  it('ufw active with a permissive default: 7880 is denied after the pods are allowed', () => {
+    machine(PUB);
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB], { FAKE_UFW: 'active', FAKE_UFW_RULES: 'Default: allow (incoming)' });
+    expect(r.code, r.err).toBe(0);
+    const c = calls();
+    expect(c.indexOf('ufw allow from 10.42.0.0/16')).toBeGreaterThan(-1);
+    expect(c.indexOf('ufw deny 7880/tcp')).toBeGreaterThan(c.indexOf('ufw allow from 10.42.0.0/16'));
+  });
+  it('firewalld running: the ports are added permanently, the pod network is trusted, then it reloads', () => {
+    machine(PUB);
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB], { FAKE_FWD: 'running' });
+    expect(r.code, r.err).toBe(0);
+    const c = calls();
+    for (const l of ['--add-port=3478/udp', '--add-port=50000-50100/udp', '--add-port=50101-50300/udp', '--add-port=7881/tcp', '--zone=trusted --add-source=10.42.0.0/16']) expect(c).toContain(l);
+    expect(c).not.toContain('--add-port=7880');
+    expect(c.indexOf('firewall-cmd --reload')).toBeGreaterThan(c.indexOf('--add-port=7881/tcp'));
+  });
+  it('iptables with a DROP policy: the ports are accepted and 7880 is dropped for outsiders, with the pods and this machine accepted', () => {
+    machine(PUB);
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB], { FAKE_IPT_POLICY: 'DROP' });
+    expect(r.code, r.err).toBe(0);
+    const c = calls();
+    expect(c).toContain('iptables -I INPUT -p udp --dport 50101:50300 -j ACCEPT');
+    expect(c).toContain('iptables -I INPUT -p tcp --dport 7880 -j DROP');
+    expect(c).toContain('iptables -I INPUT -p tcp --dport 7880 -s 10.42.0.0/16 -j ACCEPT');
+  });
+  it('no active firewall: no port is opened, 7880 is still closed to outsiders, the provider firewall is mentioned', () => {
+    machine(PUB);
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB]);
+    expect(r.code, r.err).toBe(0);
+    expect(calls()).not.toContain('--dport 3478');
+    expect(calls()).toContain('iptables -I INPUT -p tcp --dport 7880 -j DROP');
+    expect(r.out).toContain('no active firewall');
+    expect(r.out).toContain('security group');
+  });
+  it('--no-firewall touches nothing and prints the lines to run', () => {
+    machine(PUB);
+    const r = install(['--tls', 'letsencrypt', '--domain', 'team.example.com', '--public-ip', PUB, '--no-firewall'], { FAKE_UFW: 'active' });
+    expect(r.code, r.err).toBe(0);
+    expect(calls()).not.toMatch(/ufw (allow|deny)/);
+    expect(calls()).not.toContain('iptables -I');
+    expect(r.out).toContain('left alone (--no-firewall)');
+    expect(r.out).toContain('ufw allow 50000:50100/udp');
+    expect(file('etc/values.yaml')).toContain('media:\n  enabled: true'); // calls are still on
+  });
+
+  describe('existing installs', () => {
+    function existing(extra = ''): void {
+      machine(LAN);
+      mkdirSync(join(tmp, 'etc'), { recursive: true });
+      mkdirSync(join(tmp, 'var/chart'), { recursive: true });
+      writeFileSync(join(tmp, 'var/chart/values-install.yaml'), '');
+      mkdirSync(join(tmp, 'var/chart/templates'));
+      writeFileSync(join(tmp, 'var/chart/templates/media.yaml'), '');
+      writeFileSync(join(tmp, 'var/chart/values.yaml'), 'media:\n  advertiseInternalIp: false\n');
+      writeFileSync(join(tmp, 'etc/install.env'), `VERSION=0.27.0\nHOST=team.example.com\nADDRESS=https://team.example.com\nTLS_MODE=letsencrypt\nADMIN_EMAIL=me@example.com\nRELEASE_URL=${join(tmp, 'rel/release.json')}\n${extra}`);
+      const rel = join(tmp, 'r0.json');
+      writeFileSync(rel, JSON.stringify(release()));
+      expect(bash(`write_values "${join(tmp, 'etc/values.yaml')}" "${rel}" letsencrypt team.example.com - me@example.com production true ""`).code).toBe(0);
+    }
+    it('an upgrade never changes what the install has: no media in its file, no calls.yaml, no firewall, no state key', () => {
+      existing();
+      writeFileSync(join(tmp, 'rel/release.json'), JSON.stringify(release({ version: '0.28.0', hostCommandSha256: spawnSync('sha256sum', [join(tmp, 'rel/manythreads')], { encoding: 'utf8' }).stdout.split(' ')[0] })));
+      const r = install(['--upgrade'], { FAKE_UFW: 'active' });
+      expect(r.code, r.err).toBe(0);
+      expect(file('etc/values.yaml')).not.toContain('media:');
+      expect(existsSync(join(tmp, 'etc/calls.yaml'))).toBe(false);
+      expect(state()).not.toContain('CALLS');
+      expect(calls()).not.toContain('ufw allow');
+      expect(calls()).not.toContain('calls.yaml');
+    });
+    it('an upgrade keeps applying calls.yaml, before domain.yaml', () => {
+      existing('CALLS=1\n');
+      writeFileSync(join(tmp, 'etc/calls.yaml'), 'media:\n  enabled: true\n');
+      writeFileSync(join(tmp, 'etc/domain.yaml'), 'domain: team.example.com\n');
+      writeFileSync(join(tmp, 'rel/release.json'), JSON.stringify(release({ version: '0.28.0', hostCommandSha256: spawnSync('sha256sum', [join(tmp, 'rel/manythreads')], { encoding: 'utf8' }).stdout.split(' ')[0] })));
+      const r = install(['--upgrade']);
+      expect(r.code, r.err).toBe(0);
+      const helmLine = calls().split('\n').find((l) => l.startsWith('helm upgrade --install')) ?? '';
+      expect(helmLine.indexOf('calls.yaml')).toBeGreaterThan(helmLine.indexOf('values.yaml'));
+      expect(helmLine.indexOf('domain.yaml')).toBeGreaterThan(helmLine.indexOf('calls.yaml'));
+    });
+    it('--calls-enable writes calls.yaml, applies it, opens the firewall, records the state; run again it writes the same', () => {
+      existing();
+      const args = ['--calls-enable', '--public-ip', PUB];
+      const r = runInstall(args, { MANYTHREADS_INSTALL_FOR_TESTS: '1', MANYTHREADS_DOMAIN_IPS: PUB, MANYTHREADS_CALLS_LOOPBACK: 'no', FAKE_UFW: 'active', FAKE_UFW_RULES: 'Default: deny (incoming)' });
+      expect(r.code, r.err).toBe(0);
+      const first = file('etc/calls.yaml');
+      expect(first).toContain(`  nodeIp: ${PUB}`);
+      expect(first).toContain('  advertiseInternalIp: true'); // the stand-in machine's own address is private and the router "cannot loop back"
+      expect(statSync(join(tmp, 'etc/calls.yaml')).mode & 0o777).toBe(0o600);
+      expect(state()).toContain('CALLS=1');
+      expect(calls()).toContain('ufw allow 50000:50100/udp');
+      expect(calls()).toContain('-f ' + join(tmp, 'etc/calls.yaml'));
+      expect(file('etc/values.yaml')).not.toContain('media:');
+      const again = runInstall(args, { MANYTHREADS_INSTALL_FOR_TESTS: '1', MANYTHREADS_DOMAIN_IPS: PUB, MANYTHREADS_CALLS_LOOPBACK: 'no', FAKE_UFW: 'active', FAKE_UFW_RULES: 'Default: deny (incoming)' });
+      expect(again.code, again.err).toBe(0);
+      expect(file('etc/calls.yaml').replace(/^#.*\n/gm, '')).toBe(first.replace(/^#.*\n/gm, ''));
+      expect(state().match(/^CALLS=/gm)).toHaveLength(1);
+    });
+    it('--calls-enable on plain HTTP changes nothing and fails with the reason; --no-calls is a contradiction', () => {
+      existing();
+      writeFileSync(join(tmp, 'etc/install.env'), 'VERSION=0.27.0\nHOST=203.0.113.10\nTLS_MODE=none\n');
+      const r = runInstall(['--calls-enable'], { MANYTHREADS_INSTALL_FOR_TESTS: '1' });
+      expect(r.code).toBe(1);
+      expect(r.out).toContain('plain HTTP');
+      expect(existsSync(join(tmp, 'etc/calls.yaml'))).toBe(false);
+      expect(runInstall(['--calls-enable', '--no-calls'], { MANYTHREADS_INSTALL_FOR_TESTS: '1' }).err).toContain('opposite');
+    });
+    it('--calls-enable refuses a chart that is older than calls and changes nothing', () => {
+      existing();
+      rmSync(join(tmp, 'var/chart/templates'), { recursive: true });
+      const r = runInstall(['--calls-enable', '--public-ip', PUB], { MANYTHREADS_INSTALL_FOR_TESTS: '1' });
+      expect(r.code).toBe(1);
+      expect(r.err).toContain('older than calls');
+      expect(existsSync(join(tmp, 'etc/calls.yaml'))).toBe(false);
+      expect(state()).not.toContain('CALLS');
+    });
+    it('--calls-enable on a machine that has no install says so', () => {
+      machine(PUB);
+      expect(runInstall(['--calls-enable'], { MANYTHREADS_INSTALL_FOR_TESTS: '1' }).err).toContain('not installed');
+    });
+  });
+});
+
+describe('the --print-plan of calls', () => {
+  const plan = (args: string[]) => runInstall(['--print-plan', '--release-url', 'x', '--public-ip', PUB, ...args], { MANYTHREADS_DOMAIN_IPS: PUB }).out;
+  it('says what calls will be, without changing anything', () => {
+    expect(plan([])).toMatch(/calls: +(nat|public): /);
+    expect(plan(['--no-calls'])).toContain('calls:         off (--no-calls)');
+    expect(plan(['--tls', 'none'])).toContain('calls:         off (plain HTTP');
+    expect(plan(['--calls-network', 'local'])).toContain('calls:         local:');
+    expect(existsSync(join(tmp, 'etc'))).toBe(false);
+  });
+});
+
+describe('manythreads calls', () => {
+  const runHost = (args: string[], env: Record<string, string> = {}) => {
+    const r = spawnSync('bash', [host, ...args], {
+      encoding: 'utf8',
+      env: { PATH: `${bin}:${process.env['PATH']}`, HOME: tmp, MANYTHREADS_ETC: join(tmp, 'etc'), MANYTHREADS_VAR: join(tmp, 'var'), KUBECONFIG: join(tmp, 'kubeconfig'), ...env },
+    });
+    return { code: r.status, out: r.stdout.trim(), err: r.stderr.trim() };
+  };
+  beforeEach(() => {
+    mkdirSync(join(tmp, 'etc'));
+    writeFileSync(join(tmp, 'etc/install.env'), `VERSION=0.27.0\nHOST=team.example.com\nADDRESS=https://team.example.com\nTLS_MODE=letsencrypt\nCALLS=1\nCALLS_NODE_IP=${PUB}\n`);
+    stub('id', 'echo 0');
+  });
+
+  describe('enable', () => {
+    it('refuses a missing or unknown subcommand and a bad flag, and runs nothing', () => {
+      expect(runHost(['calls']).err).toContain('usage: manythreads calls enable');
+      expect(runHost(['calls', 'frob']).err).toContain('usage: manythreads calls enable');
+      expect(runHost(['calls', 'enable', '--wat']).err).toContain('unknown option --wat');
+      expect(runHost(['calls', 'enable', '--calls-network', 'maybe']).err).toContain('--calls-network wants');
+      expect(runHost(['calls', 'enable', '--public-ip']).err).toContain('needs a value');
+      expect(runHost(['calls', 'enable', '--calls']).err).toContain('does not remember where releases are published');
+    });
+    it('runs the installer the release names, in its --calls-enable mode, with the flags passed on', () => {
+      mkdirSync(join(tmp, 'served'));
+      writeFileSync(join(tmp, 'served/install.sh'), `#!/usr/bin/env bash\necho "ran with: $*" >"${tmp}/ran.txt"\n`);
+      const sha = spawnSync('sha256sum', [join(tmp, 'served/install.sh')], { encoding: 'utf8' }).stdout.split(' ')[0] ?? '';
+      if (!haveJq) return;
+      writeFileSync(join(tmp, 'served/release.json'), JSON.stringify(release({ installSha256: sha })));
+      const url = join(tmp, 'served/release.json');
+      writeFileSync(join(tmp, 'etc/install.env'), `VERSION=0.27.0\nHOST=team.example.com\nRELEASE_URL=${url}\n`);
+      const r = runHost(['calls', 'enable', '--calls', '--calls-network', 'nat', '--public-ip', PUB, '--no-firewall']);
+      expect(r.code, r.err).toBe(0);
+      expect(readFileSync(join(tmp, 'ran.txt'), 'utf8')).toContain(`ran with: --calls-enable --release-url ${url} --calls --calls-network nat --public-ip ${PUB} --no-firewall`);
+      // a substituted installer is never run
+      writeFileSync(join(tmp, 'served/install.sh'), '#!/usr/bin/env bash\necho changed\n');
+      rmSync(join(tmp, 'ran.txt'));
+      expect(runHost(['calls', 'enable']).err).toContain('install.sh does not match release.json');
+      expect(existsSync(join(tmp, 'ran.txt'))).toBe(false);
+    });
+    it('says so when manythreads is not installed here', () => {
+      rmSync(join(tmp, 'etc/install.env'));
+      expect(runHost(['calls', 'check']).err).toContain('not installed');
+    });
+  });
+
+  describe('check', () => {
+    const UFW_OPEN = 'Status: active\\n3478/udp ALLOW Anywhere\\n50000:50100/udp ALLOW Anywhere\\n50101:50300/udp ALLOW Anywhere\\n7881/tcp ALLOW Anywhere';
+    /** A healthy stand-in: the media pod ready, the ingress answers 200, TURN answers, ufw has every call port and no 7880, the configured address is this machine's. */
+    function healthy(over: { ufw?: string; listen7880?: string; exec?: number; ready?: string; deploy?: boolean; http?: string } = {}): void {
+      stub(
+        'kubectl',
+        `echo "kubectl $*" >>"${tmp}/calls.log"
+case "$*" in
+  *"get deploy manythreads-media -o jsonpath"*) printf '${over.ready ?? '1'}' ;;
+  *"get deploy manythreads-media"*) exit ${over.deploy === false ? 1 : 0} ;;
+  *"get cm manythreads-media-config"*) printf '    node_ip: "${PUB}"\\n' ;;
+  *" exec "*) exit ${over.exec ?? 0} ;;
+esac
+exit 0`,
+      );
+      stub('curl', `case "$*" in *livekit*) printf '${over.http ?? '200'}' ;; *) exit 22 ;; esac`);
+      stub('ss', `case "$*" in *3478*) echo "UNCONN 0 0 0.0.0.0:3478 0.0.0.0:*" ;; *7880*) echo "${over.listen7880 ?? 'LISTEN 0 4096 0.0.0.0:7880 0.0.0.0:*'}" ;; esac`);
+      stub('python3', 'exit 0');
+      stub('ufw', `case "$1" in status) printf '${over.ufw ?? UFW_OPEN}\\n' ;; esac; exit 0`);
+      stub('firewall-cmd', 'echo "not running"; exit 252');
+      stub('iptables', 'echo "-P INPUT ACCEPT"; exit 1');
+    }
+    const env = { MANYTHREADS_DETECTED_PUBLIC_IP: PUB, MANYTHREADS_DETECTED_LOCAL_IP: LAN };
+    it('a healthy install: every line PASS, exit 0, no secret', () => {
+      healthy();
+      const r = runHost(['calls', 'check'], env);
+      expect(r.code, r.out).toBe(0);
+      expect(r.out).not.toContain('FAIL');
+      for (const p of [
+        'the media pod is ready',
+        'the signalling answers at wss://team.example.com/livekit through the ingress',
+        'TURN answers on UDP 3478 on this machine',
+        'UDP 3478 is open in ufw',
+        'UDP 50000-50100 is open in ufw',
+        'UDP 50101-50300 is open in ufw',
+        'TCP 7881 is open in ufw',
+        "TCP 7880 (LiveKit's signalling) is not open to outsiders",
+        `the call address ${PUB} is this machine's address (public)`,
+        'the server has the call address and key, and reaches the media pod',
+      ])
+        expect(r.out, p).toContain(`PASS: ${p}`);
+      expect(r.out).not.toMatch(/api-?key|secret|token/i);
+    });
+    it('calls that are not on: one FAIL, exit 1', () => {
+      healthy({ deploy: false });
+      const r = runHost(['calls', 'check'], env);
+      expect(r.code).toBe(1);
+      expect(r.out).toContain('FAIL: calls are not turned on here');
+      expect(r.out).toContain('sudo manythreads calls enable');
+    });
+    it('a pod that is not ready, an ingress that does not answer, and a server that cannot use the pod each fail', () => {
+      healthy({ ready: '', http: '404', exec: 3 });
+      const r = runHost(['calls', 'check'], env);
+      expect(r.code).toBe(1);
+      expect(r.out).toContain('FAIL: the media pod is not ready');
+      expect(r.out).toContain('FAIL: https://team.example.com/livekit/ answered 404');
+      expect(r.out).toContain('FAIL: the server cannot use the media pod');
+    });
+    it('a closed firewall port fails with the port named', () => {
+      healthy({ ufw: 'Status: active\\n3478/udp ALLOW Anywhere\\n50000:50100/udp ALLOW Anywhere\\n50101:50300/udp ALLOW Anywhere' });
+      const r = runHost(['calls', 'check'], env);
+      expect(r.code).toBe(1);
+      expect(r.out).toContain('FAIL: TCP 7881 is not open in ufw');
+      expect(r.out).toContain('PASS: UDP 3478 is open in ufw');
+    });
+    it('7880 open to everyone fails; listening on the loopback only passes', () => {
+      healthy({ ufw: `${UFW_OPEN}\\n7880/tcp ALLOW Anywhere` });
+      const open = runHost(['calls', 'check'], env);
+      expect(open.code).toBe(1);
+      expect(open.out).toContain("FAIL: TCP 7880 (LiveKit's signalling) is open to everyone");
+      healthy({ ufw: `${UFW_OPEN}\\n7880/tcp ALLOW Anywhere`, listen7880: 'LISTEN 0 4096 127.0.0.1:7880 0.0.0.0:*' });
+      expect(runHost(['calls', 'check'], env).code).toBe(0);
+    });
+    it('with no firewall on the machine every port passes with a note about the provider, and 7880 fails until it is closed', () => {
+      healthy({ ufw: 'Status: inactive' });
+      const r = runHost(['calls', 'check'], env);
+      expect(r.out).toContain("a provider's network firewall cannot be seen from here");
+      expect(r.out).toContain('FAIL: TCP 7880');
+      expect(r.code).toBe(1);
+    });
+    it('the installer\'s own iptables rule for 7880 is not mistaken for a firewall: the ports pass and 7880 is closed', () => {
+      healthy({ ufw: 'Status: inactive' });
+      stub('iptables', 'case "$*" in "-S INPUT") echo "-P INPUT ACCEPT"; echo "-A INPUT -p tcp -m tcp --dport 7880 -j DROP" ;; "-C INPUT -p tcp --dport 7880 -j DROP") exit 0 ;; *) exit 1 ;; esac');
+      const r = runHost(['calls', 'check'], env);
+      expect(r.out).toContain('PASS: UDP 3478: no firewall on this machine blocks it');
+      expect(r.out).toContain("PASS: TCP 7880 (LiveKit's signalling) is not open to outsiders");
+      expect(r.code, r.out).toBe(0);
+    });
+    it('a call address that is no longer this machine\'s fails; one that cannot be looked up is not compared', () => {
+      healthy();
+      expect(runHost(['calls', 'check'], { MANYTHREADS_DETECTED_PUBLIC_IP: '', MANYTHREADS_DETECTED_LOCAL_IP: LAN }).out).toContain('was not compared');
+      healthy();
+      const r = runHost(['calls', 'check'], { MANYTHREADS_DETECTED_PUBLIC_IP: '198.51.100.9', MANYTHREADS_DETECTED_LOCAL_IP: LAN }); // secret-scan:ignore test fixture
+      expect(r.code).toBe(1);
+      expect(r.out).toContain(`FAIL: the call address is ${PUB} but this machine's address is 198.51.100.9`); // secret-scan:ignore test fixture
+    });
+  });
+
+  it('set-domain moves TURN\'s name with the domain when calls are on', () => {
+    mkdirSync(join(tmp, 'var/chart'), { recursive: true });
+    writeFileSync(join(tmp, 'var/chart/values-install.yaml'), '');
+    writeFileSync(join(tmp, 'etc/values.yaml'), '');
+    writeFileSync(join(tmp, 'etc/calls.yaml'), 'media:\n  enabled: true\n');
+    stub('helm', `echo "helm $*" >>"${tmp}/calls.log"; exit 0`);
+    stub('kubectl', `case "$*" in *certificate*) printf True ;; esac; exit 0`);
+    stub('sleep', 'exit 0');
+    const r = runHost(['set-domain', 'new.example.com']);
+    expect(r.code, r.err).toBe(0);
+    const f = readFileSync(join(tmp, 'etc/domain.yaml'), 'utf8');
+    expect(f).toContain('media:\n  turn:\n    domain: new.example.com');
+    expect(f).not.toContain('publicUrl: wss');
+    const helmLine = readFileSync(join(tmp, 'calls.log'), 'utf8').split('\n').find((l) => l.startsWith('helm upgrade')) ?? '';
+    expect(helmLine.indexOf('domain.yaml')).toBeGreaterThan(helmLine.indexOf('calls.yaml'));
   });
 });

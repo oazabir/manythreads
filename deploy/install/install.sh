@@ -22,10 +22,15 @@
 #   --insecure-release-url  allow a plain http:// release address (a trial on a private network only: nothing then proves the files are the project's)
 #   --chart REF           install this chart (an oci:// address, a directory or a .tgz) instead of the release's
 #   --public-ip ADDR      use this as the machine's public address (otherwise it is looked up)
+#   --calls               turn calls on even when the machine's choice is to ask (behind Cloudflare, calls show the server's real address)
+#   --no-calls            leave calls (voice and video rooms, TURN) out of this install
+#   --calls-network KIND  public | nat | local | auto (default): what kind of network the machine is on; auto tests it and prints what it found
+#   --no-firewall         do not open the call ports in this machine's firewall (the exact lines are printed instead)
 #   --kubeconfig FILE     use an existing cluster (k3s is not installed; cluster-wide pieces are added after one question)
 #   --yes                 answer yes to the questions (uninstall, adding cluster-wide pieces)
 #   --upgrade             install the release named now over the one installed (same values; a lower version is refused)
 #   --uninstall           remove manythreads (asks for the word "delete"); --remove-addons also removes cert-manager and the database operator; --remove-k3s removes k3s when this script installed it
+#   --calls-enable        (used by `manythreads calls enable`) turn calls on for an install that has none; with the same --calls-network, --no-firewall, --calls, --public-ip
 #   --print-plan          print every step and every choice, change nothing, need no root
 #   -h, --help            this text
 
@@ -46,6 +51,13 @@ NS=manythreads
 RELEASE=manythreads
 MEMINFO=${MANYTHREADS_MEMINFO:-/proc/meminfo}
 HOST_COMMAND=${MANYTHREADS_HOST_COMMAND:-/usr/local/bin/manythreads}
+VAR=${MANYTHREADS_VAR:-/var/lib/manythreads}
+# Calls (docs/deploy/install.md "Calls"): on | off | auto (ask where a question is needed); the network kind; the firewall switch. Set by the flags in main.
+CALLS_FLAG=auto; CALLS_NET=auto; NO_FIREWALL=0
+# What decide_calls found (it sets these; it runs in the main shell, not in a subshell)
+CALLS_ON=0; CALLS_TYPE=off; CALLS_NODE_IP=''; CALLS_INTERNAL_IP=''; CALLS_REASON=''
+# The ports calls use on the machine itself (proto:range). 7880 (LiveKit's signalling) is not among them: it is reached only through the ingress path /livekit.
+CALLS_PORTS=(udp:3478 udp:50000-50100 udp:50101-50300 tcp:7881)
 
 # ---- small things -------------------------------------------------------------------------------------------------------------------------------------------
 say() { printf '%s\n' "$*"; logline "$*"; }
@@ -143,6 +155,261 @@ lookup_public_ip() {
   return 1
 }
 
+# ---- calls: voice and video rooms (docs/deploy/install.md "Calls") -------------------------------------------------------------------------------------------------
+# A new install turns calls on when the machine can carry them. The choice is made here, from facts that each test can supply through the environment, and written
+# to the install's own values file (never to values-install.yaml: an upgrade applies that file to installs that have no call address, and they would fail).
+
+# an address -> 0 when it lies inside a Cloudflare proxy range (cloudflare.com/ips-v4, the published list; a missing range only means we ask less often)
+is_cloudflare_ip() {
+  local ip="${1:-}" a b c d n r base bits mask
+  [[ "$ip" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+  a=${BASH_REMATCH[1]}; b=${BASH_REMATCH[2]}; c=${BASH_REMATCH[3]}; d=${BASH_REMATCH[4]}
+  n=$(( (a << 24) | (b << 16) | (c << 8) | d ))
+  for r in 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22; do # secret-scan:ignore Cloudflare's published ranges
+    base=${r%/*}; bits=${r#*/}
+    IFS=. read -r a b c d <<<"$base"
+    mask=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+    [ $(( n & mask )) -eq $(( ((a << 24) | (b << 16) | (c << 8) | d) & mask )) ] && return 0
+  done
+  return 1
+}
+# The addresses a name points at (the tests give them in MANYTHREADS_DOMAIN_IPS)
+domain_ips() {
+  if [ -n "${MANYTHREADS_DOMAIN_IPS+x}" ]; then printf '%s\n' "$MANYTHREADS_DOMAIN_IPS"; return 0; fi
+  have getent || return 0
+  getent ahostsv4 "$1" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' '
+}
+behind_cloudflare() { # tls-mode host -> 0 when the site is served through Cloudflare's proxy
+  local mode="$1" host="$2" ip
+  [ "$mode" != cloudflare ] || return 0
+  [[ "$host" =~ ^[0-9.]+$ ]] && return 1
+  case "$host" in *.sslip.io) return 1 ;; esac # a name made from an address is never behind a proxy
+  for ip in $(domain_ips "$host"); do is_cloudflare_ip "$ip" && return 0; done
+  return 1
+}
+
+# Can this machine reach itself at its public address (NAT loopback)? Prints yes | no | unknown. MANYTHREADS_CALLS_LOOPBACK answers it for the tests.
+# A throwaway listener on port 443 is used when the port is free (a fresh machine), so the answer does not depend on anything being installed yet.
+detect_loopback() { # public ip
+  case "${MANYTHREADS_CALLS_LOOPBACK:-}" in yes|no|unknown) echo "$MANYTHREADS_CALLS_LOOPBACK"; return 0 ;; esac
+  local pub="$1" lp='' r=unknown
+  if have python3 && have ss && ! ss -H -ltn 'sport = :443' 2>/dev/null | grep -q .; then
+    python3 -c 'import socket,time
+s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("0.0.0.0", 443)); s.listen(8); s.settimeout(1)
+end=time.time()+8
+while time.time()<end:
+    try: s.accept()[0].close()
+    except Exception: pass' >/dev/null 2>&1 &
+    lp=$!; sleep 1
+  fi
+  if timeout 4 bash -c ">/dev/tcp/$pub/443" 2>/dev/null; then r=yes; elif [ -n "$lp" ]; then r=no; fi
+  [ -z "$lp" ] || { kill "$lp" 2>/dev/null || true; wait "$lp" 2>/dev/null || true; }
+  echo "$r"
+}
+
+# What calls to set up. Prints "type node-ip internal-ip reason": type is public | nat | local | off; an address is "-" when there is none.
+#   plan_calls <tls mode> <public ip or ""> <primary ip> <network: auto|public|nat|local> <loopback: yes|no|unknown>
+plan_calls() {
+  local mode="$1" pub="$2" local_ip="$3" net="$4" loop="$5"
+  if [ "$mode" = none ]; then echo "off - - plain HTTP: browsers block the camera and the microphone on a page without HTTPS"; return 0; fi
+  if [ -z "$pub" ] && [[ "$local_ip" =~ ^(127\.|$) ]]; then echo "off - - no usable address was found on this machine: give --public-ip"; return 0; fi
+  case "$net" in
+    public) [ -n "$pub" ] || pub="$local_ip"; echo "public $pub - you said this machine has a public address" ;;
+    nat)
+      [ -n "$pub" ] || { echo "off - - --calls-network nat needs the public address (give --public-ip)"; return 0; }
+      echo "nat $pub $local_ip you said this machine is behind a router that cannot reach itself by its public address" ;;
+    local) echo "local $local_ip - you said this machine is on a local network only" ;;
+    auto)
+      if [ -z "$pub" ]; then
+        if is_public_ipv4 "$local_ip"; then echo "public $local_ip - the machine's own address is a public one"
+        else echo "local $local_ip - no public address was found: calls work for people on the same local network"; fi
+      elif [ "$pub" = "$local_ip" ]; then echo "public $pub - the public address is on this machine itself"
+      elif [ "$loop" = yes ]; then echo "public $pub - the machine reaches itself by its public address (a router that loops back)"
+      elif [ "$loop" = no ]; then echo "nat $pub $local_ip the machine is behind a router that cannot reach itself by its public address, so browsers get both addresses"
+      else echo "nat $pub $local_ip it could not be tested whether the router loops back to this machine, so browsers get both addresses"; fi ;;
+    *) echo "off - - unknown network kind $net" ;;
+  esac
+}
+
+# Asks one yes/no question on the keyboard; --yes and a missing keyboard answer no (a question that reveals something is never answered for the person).
+# MANYTHREADS_CALLS_ANSWER (yes|no) answers it for the tests.
+ask_strict() {
+  case "${MANYTHREADS_CALLS_ANSWER:-}" in yes) return 0 ;; no) return 1 ;; esac
+  [ "${YES:-0}" -eq 0 ] || return 1
+  { : </dev/tty; } 2>/dev/null || return 1
+  local a; printf '%s [y/N] ' "$1" >/dev/tty; IFS= read -r a </dev/tty || return 1
+  case "$a" in y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
+}
+
+# Decides and says what it decided. Sets CALLS_ON, CALLS_TYPE, CALLS_NODE_IP, CALLS_INTERNAL_IP, CALLS_REASON.
+#   decide_calls <tls mode> <host> <public ip or ""> <primary ip>
+decide_calls() {
+  local mode="$1" host="$2" pub="$3" local_ip="$4" out loop=unknown t n i reason
+  CALLS_ON=0; CALLS_TYPE=off; CALLS_NODE_IP=''; CALLS_INTERNAL_IP=''; CALLS_REASON=''
+  if [ "$CALLS_FLAG" = off ]; then CALLS_REASON="you chose --no-calls"; say "calls: off ($CALLS_REASON)"; return 0; fi
+  if [ "$mode" = none ]; then
+    CALLS_REASON="plain HTTP: browsers block the camera and the microphone without HTTPS"
+    say "calls: off ($CALLS_REASON). Use HTTPS (--tls selfsigned, letsencrypt or cloudflare) and then run: sudo manythreads calls enable"
+    return 0
+  fi
+  if [ -n "${KUBECONFIG_ARG:-}" ] && [ "$CALLS_FLAG" != on ]; then
+    CALLS_REASON="this install uses a cluster that was already there (--kubeconfig); the call address goes through Traefik's ingress, which that cluster may not have. Add --calls if it does, or run: sudo manythreads calls enable"
+    say "calls: off ($CALLS_REASON)"; return 0
+  fi
+  if behind_cloudflare "$mode" "$host" && [ "$CALLS_FLAG" != on ]; then
+    say "This site is served through Cloudflare. Calls need the audio to reach this machine directly (UDP ports that Cloudflare does not carry), so anyone who joins a call can learn this server's real address."
+    if ! ask_strict "Turn calls on anyway?"; then
+      CALLS_REASON="behind Cloudflare, and calls would reveal the server's real address; add --calls (or run: sudo manythreads calls enable --calls) to turn them on"
+      say "calls: off ($CALLS_REASON)"; return 0
+    fi
+  fi
+  if [ "$CALLS_NET" = auto ] && [ -n "$pub" ] && [ "$pub" != "$local_ip" ]; then loop=$(detect_loopback "$pub"); fi
+  out=$(plan_calls "$mode" "$pub" "$local_ip" "$CALLS_NET" "$loop")
+  read -r t n i reason <<<"$out"
+  if [ "$t" = off ]; then CALLS_REASON="$reason"; say "calls: off ($reason)"; return 0; fi
+  CALLS_ON=1; CALLS_TYPE="$t"; CALLS_NODE_IP="$n"; CALLS_REASON="$reason"; [ "$i" = - ] || CALLS_INTERNAL_IP="$i"
+  say "calls: on. Machine type \"$t\": $reason."
+  say "  call address: $n${CALLS_INTERNAL_IP:+; local address given too: $CALLS_INTERNAL_IP}"
+  [ "$CALLS_NET" != auto ] || say "  (found: public address ${pub:-none}, this machine's address $local_ip, reaches itself by the public address: $loop; to decide it yourself use --calls-network public, nat or local)"
+}
+
+# The values of this install's calls, as yaml lines. A new install writes them into values.yaml; `manythreads calls enable` into calls.yaml.
+calls_values() { # type node-ip internal-ip host
+  local type="$1" node="$2" internal="$3" host="$4"
+  echo "# Calls (voice and video rooms), machine type $type. TURN is on without TLS (tlsPort 0); the audio ports are opened in this machine's firewall by the installer."
+  echo "media:"
+  echo "  enabled: true"
+  # publicUrl is left out on purpose: the chart makes it wss://<domain>/livekit, so a new name (`manythreads set-domain`) moves the signalling too
+  echo "  ingressPath: /livekit"
+  echo "  nodeIp: $node"
+  echo "  useExternalIp: false"
+  [ "$type" != nat ] || echo "  advertiseInternalIp: true"
+  echo "  turn:"
+  echo "    enabled: true"
+  echo "    domain: $host"
+  echo "    tlsPort: 0"
+  echo "    udpPort: 3478"
+  case "$type" in
+    nat) echo "    allowRestrictedPeerCidrs: [$internal/32]" ;;
+    local) echo "    allowRestrictedPeerCidrs: [$node/32]" ;;
+  esac
+}
+
+# ---- the firewall (only a firewall that is active is touched, and never with --no-firewall) ----------------------------------------------------------------------
+firewall_kind() { # prints ufw | firewalld | iptables | none: the first tool that is active here
+  if have ufw && ufw status 2>/dev/null | grep -qi '^Status: active'; then echo ufw; return 0; fi
+  if have firewall-cmd && [ "$(firewall-cmd --state 2>/dev/null)" = running ]; then echo firewalld; return 0; fi
+  if have iptables && iptables -S INPUT 2>/dev/null | grep -v -e '--dport 7880' | grep -Eq -e '^-P INPUT (DROP|REJECT)' -e ' -j (DROP|REJECT)'; then echo iptables; return 0; fi
+  echo none
+}
+firewall_has() { # kind proto range -> 0 when that port is already allowed
+  local kind="$1" proto="$2" range="$3" colon="${3/-/:}"
+  case "$kind" in
+    ufw) ufw status 2>/dev/null | grep -Eq "^(${range}|${colon})(/${proto})?[[:space:]]+ALLOW" ;;
+    firewalld) firewall-cmd --list-ports 2>/dev/null | tr ' ' '\n' | grep -qx "$range/$proto" ;;
+    iptables) iptables -C INPUT -p "$proto" --dport "$colon" -j ACCEPT 2>/dev/null ;;
+    *) return 0 ;;
+  esac
+}
+# The pods reach LiveKit's signalling (TCP 7880, on the machine's own network) from the pod network; that stays allowed and nothing else is, so 7880 is closed from outside.
+POD_CIDR=${MANYTHREADS_POD_CIDR:-10.42.0.0/16}
+firewall_lines() { # kind -> the lines a person runs by hand
+  local kind="$1" e proto range
+  case "$kind" in
+    firewalld)
+      for e in "${CALLS_PORTS[@]}"; do proto=${e%%:*}; range=${e#*:}; echo "firewall-cmd --permanent --add-port=$range/$proto"; done
+      echo "firewall-cmd --permanent --zone=trusted --add-source=$POD_CIDR"; echo "firewall-cmd --reload" ;;
+    iptables)
+      for e in "${CALLS_PORTS[@]}"; do proto=${e%%:*}; range=${e#*:}; echo "iptables -I INPUT -p $proto --dport ${range/-/:} -j ACCEPT"; done
+      echo "iptables -I INPUT -p tcp --dport 7880 -j DROP"; echo "iptables -I INPUT -p tcp --dport 7880 -s $POD_CIDR -j ACCEPT"; echo "iptables -I INPUT -p tcp --dport 7880 -i lo -j ACCEPT" ;;
+    *)
+      for e in "${CALLS_PORTS[@]}"; do proto=${e%%:*}; range=${e#*:}; echo "ufw allow ${range/-/:}/$proto"; done
+      echo "ufw allow from $POD_CIDR to any port 7880 proto tcp"; echo "ufw deny 7880/tcp" ;;
+  esac
+}
+# Keeps TCP 7880 for the pods and this machine: a DROP for everyone else, the two accepts above it.
+close_7880_iptables() {
+  iptables -C INPUT -p tcp --dport 7880 -j DROP 2>/dev/null && return 0
+  run "closing 7880 to outsiders" iptables -I INPUT -p tcp --dport 7880 -j DROP
+  run "letting the pods reach 7880" iptables -I INPUT -p tcp --dport 7880 -s "$POD_CIDR" -j ACCEPT
+  run "letting this machine reach 7880" iptables -I INPUT -p tcp --dport 7880 -i lo -j ACCEPT
+  if have netfilter-persistent; then netfilter-persistent save >>"$LOG" 2>&1 || true; else say "  (the iptables rules for 7880 last until the machine restarts; run: sudo manythreads calls enable after a restart, or save them with your system's tool)"; fi
+}
+firewall_open() { # kind: opens each missing call port, and keeps 7880 for the pods only
+  local kind="$1" e proto range reload=0
+  for e in "${CALLS_PORTS[@]}"; do
+    proto=${e%%:*}; range=${e#*:}
+    if firewall_has "$kind" "$proto" "$range"; then say "  ${proto^^} $range: open already"; continue; fi
+    case "$kind" in
+      ufw) run "opening $range/$proto in ufw" ufw allow "${range/-/:}/$proto" ;;
+      firewalld) run "opening $range/$proto in firewalld" firewall-cmd --permanent --add-port="$range/$proto"; reload=1 ;;
+      iptables) run "opening $range/$proto in iptables" iptables -I INPUT -p "$proto" --dport "${range/-/:}" -j ACCEPT ;;
+    esac
+    say "  ${proto^^} $range: opened"
+  done
+  case "$kind" in
+    ufw)
+      # the pods first (a rule that comes earlier wins), then a refusal for everyone else when ufw's default would let 7880 in
+      ufw status 2>/dev/null | grep -Eq "^7880/tcp[[:space:]]+ALLOW[[:space:]]+$POD_CIDR" || run "letting the pods reach 7880 in ufw" ufw allow from "$POD_CIDR" to any port 7880 proto tcp
+      ufw status verbose 2>/dev/null | grep -Eqi '^Default:.*(deny|reject) \(incoming\)' || run "closing 7880 in ufw" ufw deny 7880/tcp ;;
+    firewalld) firewall-cmd --permanent --zone=trusted --query-source="$POD_CIDR" >/dev/null 2>&1 || { run "trusting the pod network in firewalld" firewall-cmd --permanent --zone=trusted --add-source="$POD_CIDR"; reload=1; } ;;
+    iptables) close_7880_iptables ;;
+  esac
+  if [ "$reload" -eq 1 ]; then run "reloading firewalld" firewall-cmd --reload; fi
+  say "  TCP 7880 (LiveKit's signalling) is reached only through the address's /livekit path; it is not opened to outside"
+}
+firewall_hint() { # the tool whose lines are the most use to print
+  local k; k=$(firewall_kind)
+  if [ "$k" != none ]; then echo "$k"; elif have firewall-cmd; then echo firewalld; elif have iptables && ! have ufw; then echo iptables; else echo ufw; fi
+}
+calls_firewall() { # opens the ports, or prints what to run
+  local kind; kind=$(firewall_kind)
+  if [ "$NO_FIREWALL" -eq 1 ]; then
+    say "firewall: left alone (--no-firewall). If this machine has a firewall, run these lines (and open the same ports in your provider's network firewall, if it has one):"
+    firewall_lines "$(firewall_hint)" | sed 's/^/  /'
+  elif [ "$kind" = none ]; then
+    say "firewall: no active firewall (ufw, firewalld or iptables rules) was found here, so nothing on this machine blocks the call ports."
+    if have iptables; then say "  TCP 7880 (LiveKit's signalling) would be open to everyone on this machine's network, so it is closed with an iptables rule that lets only the pods and this machine in:"; close_7880_iptables
+    else say "  TCP 7880 (LiveKit's signalling) is open to anyone who can reach this machine; close it to outsiders (the pods reach it from $POD_CIDR)."; fi
+    say "  If your provider has a network firewall (a security group), open UDP 3478, UDP 50000-50100, UDP 50101-50300 and TCP 7881 there (not 7880)."
+  else
+    say "firewall: $kind is active; checking the call ports"
+    firewall_open "$kind"
+    say "  If your provider also has a network firewall (a security group), open UDP 3478, 50000-50100, 50101-50300 and TCP 7881 there too."
+  fi
+}
+
+# After a helm install that had calls on: the firewall, then the media pod
+calls_after_install() {
+  step "Calls: the firewall and the media pod"
+  calls_firewall
+  if kubectl -n "$NS" rollout status deploy/manythreads-media --timeout=300s >>"$LOG" 2>&1; then say "the media pod is ready"
+  else warn "the media pod is not ready yet (kubectl -n $NS describe pod -l app.kubernetes.io/component=media); check later with: sudo manythreads calls check"; fi
+}
+
+# `manythreads calls enable` (the host command downloads this installer, checks it against release.json, and runs it with --calls-enable): the same decision as a new install
+# makes, for an install that has no calls (or whose address changed). It writes /etc/manythreads/calls.yaml, which every later upgrade applies too. Safe to run again.
+calls_enable_existing() { # public ip, primary ip
+  local pub="$1" local_ip="$2" tmode host chart
+  [ -f "$ETC/install.env" ] || die "manythreads is not installed on this machine (no $ETC/install.env)"
+  [ "$CALLS_FLAG" != off ] || die "--no-calls and calls enable say opposite things"
+  setup_kube_env
+  have helm || die "helm was not found"
+  tmode=$(state_get TLS_MODE); host=$(state_get HOST); chart="$VAR/chart"
+  [ -f "$chart/values-install.yaml" ] || die "the chart of this release is not kept on this machine ($chart); run: manythreads upgrade"
+  { [ -f "$chart/templates/media.yaml" ] && grep -q '^  advertiseInternalIp:' "$chart/values.yaml" 2>/dev/null; } || die "the chart of this install ($(state_get VERSION)) is older than calls; run: sudo manythreads upgrade, then calls enable"
+  step "Calls (voice and video rooms)"
+  decide_calls "$tmode" "$host" "$pub" "$local_ip"
+  if [ "$CALLS_ON" -eq 0 ]; then say "nothing was changed."; return 1; fi
+  mkdir -p "$ETC"; chmod 700 "$ETC"
+  calls_values "$CALLS_TYPE" "$CALLS_NODE_IP" "$CALLS_INTERNAL_IP" "$host" >"$ETC/calls.yaml"; chmod 600 "$ETC/calls.yaml"
+  helm_install "$chart" "Turning calls on (the media pod starts; the images may be pulled)"
+  kubectl -n "$NS" get deploy/manythreads-media >/dev/null 2>&1 || die "the chart made no media pod (is media.enabled false in a file that is read after $ETC/calls.yaml?); calls are not on"
+  calls_after_install
+  state_put CALLS 1; state_put CALLS_TYPE "$CALLS_TYPE"; state_put CALLS_NODE_IP "$CALLS_NODE_IP"
+  say "Calls are on. Check them with: sudo manythreads calls check"
+}
+
 # ---- the checks (a failure is one plain line; nothing has been changed yet) --------------------------------------------------------------------------------------
 check_machine() { # prints problems as "error: ..." / "warning: ..." lines, returns 1 when there is an error
   local bad=0 mb gb cpus
@@ -237,9 +504,9 @@ version_lt() { # a b: a < b
 }
 
 # ---- the values file ----------------------------------------------------------------------------------------------------------------------------------------
-# write_values <file> <release.json> <mode> <host> <extra> <email> <le-server> <claude-pod: true|false> <ip list, comma separated or "">
+# write_values <file> <release.json> <mode> <host> <extra> <email> <le-server> <claude-pod: true|false> <ip list, comma separated or ""> [calls values: the lines calls_values prints]
 write_values() {
-  local out="$1" rel="$2" mode="$3" host="$4" extra="$5" email="$6" leserver="$7" claude="$8" ips="${9:-}"
+  local out="$1" rel="$2" mode="$3" host="$4" extra="$5" email="$6" leserver="$7" claude="$8" ips="${9:-}" calls="${10:-}"
   {
     echo "# Written by install.sh $(date -u +%Y-%m-%dT%H:%M:%SZ) for release $(jq -r .version "$rel"). It is read on every upgrade; change it with \`manythreads set-domain\` or by hand."
     echo "# Given to helm after the chart's own values-install.yaml, so what is here wins."
@@ -263,6 +530,7 @@ write_values() {
     echo "postgres:"; echo "  image: $(jq -r ".images[\"postgres-cnpg\"]" "$rel")"
     echo "hermesPods:"; echo "  images:"; echo "    hermes: $(jq -r ".images[\"hermes-pod\"]" "$rel")"; echo "    workbench: $(jq -r ".images[\"workbench\"]" "$rel")"
     echo "claudePod:"; echo "  enabled: $claude"; echo "  image: $(jq -r ".images[\"claude-pod\"]" "$rel")"
+    if [ -n "$calls" ]; then printf '%s\n' "$calls"; fi
   } >"$out"
 }
 
@@ -347,17 +615,17 @@ prepare_chart() { # ref version workdir
   esac
 }
 
-helm_install() { # chart-dir
+helm_install() { # chart-dir [what is being done]
   local chart="$1"
   [ -f "$chart/values-install.yaml" ] || die "the chart has no values-install.yaml (is this a release chart?)"
-  step "Installing manythreads (this pulls the images: it takes several minutes the first time)"
+  step "${2:-Installing manythreads (this pulls the images: it takes several minutes the first time)}"
   # no --wait: the backups claim stays Pending until the first nightly job (MISTAKES.md, "Install-fresh"); the steps below wait for what matters
   local files=(-f "$chart/values-install.yaml" -f "$ETC/values.yaml") extra
-  # what `manythreads set-domain` and `manythreads allow-git-host` wrote is kept by an upgrade
-  for extra in domain.yaml git-hosts.yaml; do [ ! -f "$ETC/$extra" ] || files+=(-f "$ETC/$extra"); done
+  # what `manythreads calls enable`, `set-domain` and `allow-git-host` wrote is kept by an upgrade (calls.yaml before domain.yaml: set-domain moves the call address)
+  for extra in calls.yaml domain.yaml git-hosts.yaml; do [ ! -f "$ETC/$extra" ] || files+=(-f "$ETC/$extra"); done
   run "installing the chart" helm upgrade --install "$RELEASE" "$chart" -n "$NS" --create-namespace "${files[@]}" --timeout 15m
   # the chart stays on the machine: `manythreads set-domain` and `upgrade` use it
-  mkdir -p "${MANYTHREADS_VAR:-/var/lib/manythreads}"; rm -rf "${MANYTHREADS_VAR:-/var/lib/manythreads}/chart"; cp -r "$chart" "${MANYTHREADS_VAR:-/var/lib/manythreads}/chart"
+  if [ "$chart" != "$VAR/chart" ]; then mkdir -p "$VAR"; rm -rf "$VAR/chart"; cp -r "$chart" "$VAR/chart"; fi
 }
 
 wait_ready() {
@@ -393,8 +661,8 @@ cert_fingerprint() { # prints the SHA-256 of the site's certificate (hex, no col
   kubectl -n "$NS" get secret manythreads-tls -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d | openssl x509 -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1
 }
 
-print_box() { # address email passfile version mode fingerprint
-  local addr="$1" email="$2" passfile="$3" version="$4" mode="$5" fp="$6" pass=''
+print_box() { # address email passfile version mode fingerprint [calls line]
+  local addr="$1" email="$2" passfile="$3" version="$4" mode="$5" fp="$6" calls="${7:-}" pass=''
   [ ! -s "$passfile" ] || pass=$(cat "$passfile")
   printf '\n'
   printf 'manythreads %s is running.\n' "$version"
@@ -407,6 +675,7 @@ print_box() { # address email passfile version mode fingerprint
   fi
   printf '  Next:      sign in and follow "Finish setting up".\n'
   printf '  Keep safe: `sudo manythreads backup-key` prints the key that unlocks stored secrets; save it in your password manager.\n'
+  [ -z "$calls" ] || printf '  Calls:     %s\n' "$calls"
   case "$mode" in
     selfsigned) printf '  Certificate: self-signed (SHA-256 %s). Your browser will warn once: that is expected; compare it with this fingerprint before you accept.\n' "$fp" ;;
     none) printf '  Warning:   plain HTTP: for a trial only. Passwords cross the network unprotected.\n' ;;
@@ -433,12 +702,13 @@ settle_letsencrypt() {
 }
 
 # ---- the plan ---------------------------------------------------------------------------------------------------------------------------------------------------
-print_plan() { # tls-mode host extra version release-url claude-class
-  local mode="$1" host="$2" extra="$3" version="$4" url="$5" mem="$6"
+print_plan() { # tls-mode host extra version release-url claude-class [calls line]
+  local mode="$1" host="$2" extra="$3" version="$4" url="$5" mem="$6" calls="${7:-}"
   echo "manythreads install plan (nothing is changed by --print-plan)"
   echo "  release:       ${version:-the one $url names}  (release.json: ${url:-not set})"
   echo "  address:       $host   (HTTPS: $mode$( [ -n "$extra" ] && [ "$extra" != - ] && echo ", also reachable as $extra"))"
   case "$mem" in full) echo "  agent pods:    on (16 GB or more)" ;; small) echo "  agent pods:    off (8 to 16 GB of memory)" ;; *) echo "  agent pods:    off" ;; esac
+  [ -z "$calls" ] || echo "  calls:         $calls"
   echo "steps:"
   echo "  1. checks: Linux x86-64, systemd, root, memory, disk, CPU, ports 80/443/6443, clock, the network"
   if have k3s || [ -n "${KUBECONFIG_ARG:-}" ]; then echo "  2. k3s: the cluster that is here is used"; else echo "  2. install k3s $K3S_VERSION (Traefik keeps visitors' addresses)"; fi
@@ -446,7 +716,8 @@ print_plan() { # tls-mode host extra version release-url claude-class
   echo "  4. write $ETC/values.yaml (mode 0600) from the release's images by digest"
   echo "  5. helm install the release's chart in the namespace $NS (no --wait; the install waits for the database, server and web itself)"
   echo "  6. make the first administrator (admin first-admin), keep the password in the Secret manythreads-first-admin, print it once"
-  echo "  7. install $HOST_COMMAND and write $ETC/install.env"
+  echo "  7. calls (unless off): open UDP 3478, 50000-50100, 50101-50300 and TCP 7881 in the firewall that is active (or print the lines to run), keep TCP 7880 closed to outsiders, wait for the media pod"
+  echo "  8. install $HOST_COMMAND and write $ETC/install.env"
   echo "files: $ETC/values.yaml, $ETC/install.env, $HOST_COMMAND, $LOG"
 }
 
@@ -469,6 +740,11 @@ main() {
       --chart) shift; chart_arg="${1:-}" ;;
       --public-ip) shift; public_ip="${1:-}" ;;
       --kubeconfig) shift; KUBECONFIG_ARG="${1:-}"; [ -r "$KUBECONFIG_ARG" ] || die "cannot read the kubeconfig $KUBECONFIG_ARG" ;;
+      --calls) CALLS_FLAG=on ;;
+      --no-calls) CALLS_FLAG=off ;;
+      --calls-network) shift; [ $# -gt 0 ] || die "--calls-network needs auto, public, nat or local"; CALLS_NET="$1" ;;
+      --no-firewall) NO_FIREWALL=1 ;;
+      --calls-enable) mode=calls ;;
       --yes|-y) YES=1 ;;
       --upgrade) mode=upgrade ;;
       --uninstall) mode=uninstall ;;
@@ -481,6 +757,7 @@ main() {
     shift
   done
   case "$tls" in auto|letsencrypt|selfsigned|cloudflare|none) ;; *) die "--tls wants auto, letsencrypt, selfsigned, cloudflare or none" ;; esac
+  case "$CALLS_NET" in auto|public|nat|local) ;; *) die "--calls-network wants auto, public, nat or local" ;; esac
   if [ "$tls" = cloudflare ]; then
     [ -n "$domain" ] || die "--tls cloudflare needs --domain"
     [ -n "$origin_cert" ] && [ -n "$origin_key" ] && [ -f "$origin_cert" ] && [ -f "$origin_key" ] || die "--tls cloudflare needs --origin-cert FILE and --origin-key FILE (the Cloudflare origin certificate)"
@@ -496,7 +773,15 @@ main() {
   if [ "$plan" -eq 1 ]; then
     local pm ph pe
     read -r pm ph pe < <(plan_tls "$tls" "$domain" "$pub" "$local_ip" || echo "selfsigned $local_ip -")
-    print_plan "$pm" "$ph" "$pe" "$want_version" "$release_url" "$class"
+    local pc pt pn pi pr
+    if [ "$CALLS_FLAG" = off ]; then pc="off (--no-calls)"
+    elif [ "$pm" = none ]; then pc="off (plain HTTP: browsers block the camera and the microphone without HTTPS)"
+    elif behind_cloudflare "$pm" "$ph"; then pc="$( [ "$CALLS_FLAG" = on ] && echo on || echo 'asked first: the site is behind Cloudflare, so calls reveal the real address; off when nobody can be asked')"
+    else
+      read -r pt pn pi pr <<<"$(plan_calls "$pm" "$pub" "$local_ip" "$CALLS_NET" unknown)"
+      pc="$pt: $pr (call address $pn; whether the router loops back is tested at install time)"
+    fi
+    print_plan "$pm" "$ph" "$pe" "$want_version" "$release_url" "$class" "$pc"
     return 0
   fi
 
@@ -506,6 +791,7 @@ main() {
 
   case "$mode" in
     uninstall) uninstall_all "$remove_addons" "$remove_k3s"; return 0 ;;
+    calls) calls_enable_existing "$pub" "$local_ip"; return $? ;;
   esac
 
   # ---- the checks ---------------------------------------------------------------------------------------------------------------------------------------------
@@ -556,6 +842,13 @@ main() {
   [ -n "$email" ] || email=$(ask_line "The first administrator's email" "admin@$thost")
   [[ "$email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || die "that is not an email address: $email"
   local claude=false; [ "$class" = full ] && claude=true
+  # calls: only a new install decides; an upgrade never changes what an install has (an install without a call address would fail to upgrade)
+  local calls_block=''
+  if [ "$mode" = install ]; then
+    step "Calls (voice and video rooms)"
+    decide_calls "$tmode" "$thost" "$pub" "$local_ip"
+    [ "$CALLS_ON" -eq 0 ] || calls_block=$(calls_values "$CALLS_TYPE" "$CALLS_NODE_IP" "$CALLS_INTERNAL_IP" "$thost")
+  fi
 
   # ---- doing it -----------------------------------------------------------------------------------------------------------------------------------------------
   install_k3s
@@ -569,7 +862,7 @@ main() {
     # a self-signed certificate also names this machine's own address, so the address people use on the local network works too
     local ips=''
     if [ "$tmode" = selfsigned ] && [ "$local_ip" != "$thost" ] && [[ "$local_ip" =~ ^[0-9.]+$ ]]; then ips="$local_ip"; fi
-    write_values "$ETC/values.yaml" "$rel" "$tmode" "$thost" "$textra" "$email" staging "$claude" "$ips"
+    write_values "$ETC/values.yaml" "$rel" "$tmode" "$thost" "$textra" "$email" staging "$claude" "$ips" "$calls_block"
   else
     # an upgrade keeps the file and moves only the images
     refresh_images "$ETC/values.yaml" "$rel"
@@ -600,7 +893,7 @@ main() {
       warn "Let's Encrypt could not prove $thost (is port 80 reachable from the Internet, and does the name point here?). Using a self-signed certificate instead."
       tmode=selfsigned
       local ips2=''; [ "$local_ip" = "$thost" ] || ips2="$local_ip"
-      write_values "$ETC/values.yaml" "$rel" selfsigned "$thost" "$textra" "$email" staging "$claude" "$ips2"
+      write_values "$ETC/values.yaml" "$rel" selfsigned "$thost" "$textra" "$email" staging "$claude" "$ips2" "$calls_block"
       helm_install "$chart"
       settle_letsencrypt || warn "the self-signed certificate is not ready yet"
     fi
@@ -609,6 +902,7 @@ main() {
   fi
 
   wait_ready
+  if [ "$mode" = install ] && [ "$CALLS_ON" -eq 1 ]; then calls_after_install; fi
   local passfile="$work/first-password"; : >"$passfile"; chmod 600 "$passfile"
   if [ "$mode" = install ]; then make_admin "$email" "$workspace" "$passfile"; fi
 
@@ -619,7 +913,13 @@ main() {
   state_put VERSION "$version"; state_put TLS_MODE "$tmode"; state_put HOST "$thost"; state_put ADDRESS "$address"; state_put RELEASE_URL "$release_url"
   [ -z "$fp" ] || state_put CERT_SHA256 "$fp"
   state_put ADMIN_EMAIL "$email"
-  print_box "$address" "$email" "$passfile" "$version" "$tmode" "$fp"
+  local calls_line=''
+  if [ "$mode" = install ]; then
+    state_put CALLS "$CALLS_ON"; state_put CALLS_TYPE "$CALLS_TYPE"; state_put CALLS_NODE_IP "$CALLS_NODE_IP"
+    if [ "$CALLS_ON" -eq 1 ]; then calls_line="on ($CALLS_TYPE); check them with: sudo manythreads calls check"
+    else calls_line="off ($CALLS_REASON)"; fi
+  fi
+  print_box "$address" "$email" "$passfile" "$version" "$tmode" "$fp" "$calls_line"
 }
 
 check_ports_unless_installed() {
