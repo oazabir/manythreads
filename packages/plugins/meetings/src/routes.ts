@@ -7,6 +7,7 @@ import {
   requireTeam,
   route,
   type MediaProvider,
+  type MediaToken,
   type MessageProvider,
   type PluginContext,
   type PluginTx,
@@ -43,7 +44,7 @@ import {
   type GuestLinkMade,
   type MeetingJoin,
 } from '@manythreads/shared';
-import { mediaFailure, mediaStatus, requireMedia, bestEffort } from './media.ts';
+import { joinOf, mediaFailure, mediaStatus, requireMedia, bestEffort } from './media.ts';
 import { MEETING_COLUMNS, loadMeeting, summaries, toMeeting, type MeetingRow } from './rows.ts';
 import { announceRoom, ringDirectMessage } from './live.ts';
 import { MEETING_SERVICE_SEATS, assertRoomHasSpace, roomCap } from './limits.ts';
@@ -106,20 +107,25 @@ async function enterRoom(ctx: PluginContext, tx: PluginTx, m: MeetingRow, caller
 }
 
 /** The caller's media token for the room: the one step a join takes on the media server. */
-async function mediaToken(media: MediaProvider, m: MeetingRow, caller: Caller, displayName: string): Promise<MeetingJoin> {
+async function mediaToken(ctx: PluginContext, media: MediaProvider, m: MeetingRow, caller: Caller, displayName: string, origin: string | undefined): Promise<MeetingJoin> {
   let token;
   try {
     token = await media.token({ id: caller.actorId, kind: 'person', displayName }, m.id, { canPublish: true, canSubscribe: true });
   } catch (err) {
     throw mediaFailure(err);
   }
-  return { provider: token.provider, url: token.url, token: token.token, identity: token.identity as MeetingJoin['identity'], roomName: token.roomName, expiresAt: token.expiresAt.toISOString() };
+  return personJoin(ctx, token, origin);
+}
+
+/** A person's join: the media address follows the origin their request came in on (see `joinOf`). */
+function personJoin(ctx: PluginContext, token: MediaToken, origin: string | undefined): MeetingJoin {
+  return { ...joinOf(ctx, token, origin), identity: token.identity as MeetingJoin['identity'] };
 }
 
 /** Puts the caller in the room (or leaves them in it) and makes their token. The media server is asked only after the database accepted the person. */
-export async function joinAndToken(ctx: PluginContext, tx: PluginTx, media: MediaProvider, m: MeetingRow, caller: Caller): Promise<MeetingJoin> {
+export async function joinAndToken(ctx: PluginContext, tx: PluginTx, media: MediaProvider, m: MeetingRow, caller: Caller, origin: string | undefined): Promise<MeetingJoin> {
   const name = await enterRoom(ctx, tx, m, caller);
-  return mediaToken(media, m, caller, name);
+  return mediaToken(ctx, media, m, caller, name, origin);
 }
 
 /** The words of a call's start message, written once and never rewritten (the card shows the live title and state). */
@@ -151,6 +157,8 @@ export async function startRoom(
     notetakerBotId?: string | null;
     /** A video call (P36-02); audio when absent. A start while a call is live joins that call, whichever kind it is: one call per channel in total. */
     kind?: 'audio' | 'video';
+    /** `HttpRequest.origin` of the request that starts the call: the media address in the answer follows it. */
+    origin: string | undefined;
     onCreated?: (m: MeetingRow) => Promise<void>;
   },
 ): Promise<{ m: MeetingRow; created: boolean; join: MeetingJoin; invited: number }> {
@@ -182,7 +190,7 @@ export async function startRoom(
   const created = row.id === ids.id;
   const m = await loadMeeting(tx, row.id);
   if (!m) throw notFound('That voice room is not available');
-  if (!created) return { m, created, join: await joinAndToken(ctx, tx, media, m, caller), invited: 0 };
+  if (!created) return { m, created, join: await joinAndToken(ctx, tx, media, m, caller, input.origin), invited: 0 };
 
   await ctx.audit.emit(
     tx,
@@ -230,7 +238,7 @@ export async function startRoom(
   } catch (err) {
     throw mediaFailure(err);
   }
-  return { m, created, join: await mediaToken(media, m, caller, name), invited: invited.length };
+  return { m, created, join: await mediaToken(ctx, media, m, caller, name, input.origin), invited: invited.length };
 }
 
 export function registerMeetingRoutes(ctx: PluginContext): void {
@@ -258,6 +266,7 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
         channelId,
         title: body.title,
         caller,
+        origin: req.origin,
         ...(body.kind ? { kind: body.kind } : {}),
         ...(body.inviteeIds ? { inviteeIds: body.inviteeIds } : {}),
         ...(body.notetakerBotId ? { notetakerBotId: body.notetakerBotId } : {}),
@@ -286,7 +295,7 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
       const caller = await callerPerson(tx);
       const m = await loadMeeting(tx, meetingId);
       if (!m) throw notFound('That voice room is not available');
-      const join = await joinAndToken(ctx, tx, media, m, caller);
+      const join = await joinAndToken(ctx, tx, media, m, caller, req.origin);
       return json(JoinMeetingResponse.parse({ meeting: toMeeting(m), join }));
     }),
   });
@@ -313,7 +322,7 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
       } catch (err) {
         throw mediaFailure(err);
       }
-      const join: MeetingJoin = { provider: token.provider, url: token.url, token: token.token, identity: token.identity as MeetingJoin['identity'], roomName: token.roomName, expiresAt: token.expiresAt.toISOString() };
+      const join = personJoin(ctx, token, req.origin);
       return json(RenewMeetingTokenResponse.parse({ join }));
     }),
   });

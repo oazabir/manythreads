@@ -79,7 +79,7 @@ import {
 } from '@manythreads/shared';
 import { announceRoom } from './live.ts';
 import { WindowCounter, stripHostileText } from './limits.ts';
-import { bestEffort, currentMedia, mediaFailure, requireMedia } from './media.ts';
+import { bestEffort, currentMedia, joinOf, mediaFailure, requireMedia } from './media.ts';
 import { callerPerson, type Caller } from './routes.ts';
 import { guestIdentity, guestSpeakerName, loadMeeting, type MeetingRow } from './rows.ts';
 import { takeGuestSegments } from './segments.ts';
@@ -629,7 +629,7 @@ export function registerGuestRoutes(ctx: PluginContext): void {
         return withHeaders(
           json(
             GuestTokenResponse.parse({
-              join: { provider: token.provider, url: token.url, token: token.token, identity: token.identity, roomName: token.roomName, expiresAt: token.expiresAt.toISOString() },
+              join: joinOf(ctx, token, req.origin),
               people,
             }),
           ),

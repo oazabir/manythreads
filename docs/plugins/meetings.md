@@ -215,7 +215,18 @@ A **link guest** is someone outside the workspace with no account (not a workspa
   knock the address becomes `/join/g/` (the secret leaves the address bar). nginx (`location ^~ /join/g/`) and the server's own static serving send the app's policy plus
   `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex` and write no access log line. The policy is not widened: members reach the media server at
   `wss://<site>/livekit` (`media.ingressPath`), which `connect-src 'self'` already covers, and so do guests. An install whose media server has a name of its own needs that name
-  in `connect-src` for members and guests alike.
+  in `connect-src` for members and guests alike (the operator adds it to the policy in `deploy/docker/nginx.conf`; nothing adds it by itself).
+- **The address a call connects to follows the page (P38-11).** The server is told one media address (`MANYTHREADS_LIVEKIT_URL`, the chart's `media.publicUrl`). When it is the
+  path form of the site (`wss://<site>/livekit`: the site's own host and a path), a person who opened the site through another name (a second domain, a local IP such as
+  `https://10.0.0.5:8443`) would be given an address on a different origin, and the page's policy would block it. So every join (starting, joining, a renewed token, a
+  planned room's start and a link guest's token) goes through ONE function, `joinOf` (`meetings/src/media.ts`, over `mediaAddressFor` in the SDK), which builds the address
+  from the origin the request came in on: `https` pages get `wss`, `http` pages get `ws`, the host and port are the page's, the path is kept. The origin is
+  `HttpRequest.origin`, made by the server from Fastify's `protocol` and `host`, which read `X-Forwarded-Proto` and `X-Forwarded-Host` only from the proxies
+  `MANYTHREADS_TRUST_PROXY` names (no new trust; the web image's nginx now sends `X-Forwarded-Host` with the port the person typed, because its `Host` has none); a host that is not a plain `host[:port]` is dropped and the configured address is used. On the site's own host nothing is rewritten, and without `MANYTHREADS_PUBLIC_URL` nothing is either. The proxy in front must say `X-Forwarded-Proto` for a second name to get `wss`. An address on a host of its own
+  (`wss://media.example.org`, or a path on a host other than the site's) is returned as it is. The note-taker's listener is not affected (it connects from the server with
+  `MANYTHREADS_LIVEKIT_LISTEN_URL`). For a second domain to work, the ingress must also send `/livekit` to the media pod for that domain (the chart lists the media
+  Ingress under `domain` only; a name that is not on that list reaches the site, not the media server). A guest link is made from `MANYTHREADS_PUBLIC_URL`, so guests open
+  the site through that name. Tests: `sdk/test/media-address.test.ts`, `meetings/test/join-address.test.ts`, `meetings/test/join-address-world.test.ts`.
 - **Still to do:** visual baselines of the guest's question and of the links list.
 
 ## Meeting series (P17-05, steps 1 and 2)

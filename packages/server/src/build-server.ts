@@ -33,7 +33,7 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
-import { HttpError, type HttpRequest, type PluginSocket } from '@manythreads/sdk';
+import { HttpError, requestOriginOf, type HttpRequest, type PluginSocket } from '@manythreads/sdk';
 import { isIP } from 'node:net';
 import { Readable } from 'node:stream';
 import type pg from 'pg';
@@ -404,6 +404,11 @@ async function mountPluginRoutes(
   trackSocket: (sessionId: string, end: () => void) => () => void,
 ): Promise<void> {
   if (!host) return;
+  /** The origin the request came in on, from the scheme and host Fastify believes (it follows `x-forwarded-*` only from the proxies `trustProxy` names). */
+  const originOf = (req: FastifyRequest): { origin: string } | Record<string, never> => {
+    const origin = requestOriginOf(req.protocol, req.host);
+    return origin ? { origin } : {};
+  };
   /** The same request the HTTP handler sees, built from the Fastify request (a socket upgrade has no body). */
   const requestOf = (req: FastifyRequest, def: MountedRoute): HttpRequest => ({
     params: req.params as Record<string, string>,
@@ -412,6 +417,7 @@ async function mountPluginRoutes(
     ...(def.rawBody ? { stream: req.raw } : {}),
     headers: Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : v])),
     ip: req.ip,
+    ...originOf(req),
     caller: req.actor
       ? {
           actorId: req.actor.id,

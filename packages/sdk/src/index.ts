@@ -25,6 +25,7 @@ export * from './runner-nodes.ts';
 export * from './claude-pods.ts';
 export * from './deploy-kubeconfig.ts';
 export * from './media.ts';
+export * from './media-address.ts';
 export * from './http.ts';
 export * from './lockout.ts';
 export * from './tool-sources.ts';

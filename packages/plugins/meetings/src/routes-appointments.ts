@@ -275,7 +275,7 @@ export function registerAppointmentRoutes(ctx: PluginContext): void {
       // only the people of its space (the maker and the invited) can be in its call; a member of the team who is not invited sees it but is not in it
       const member = (await tx.query<{ ok: boolean }>("SELECT coalesce(app.lookup_channel_can($1::uuid, 'post'), false) AS ok", [a.channelId])).rows[0]?.ok === true;
       if (!member) throw forbidden('Only the people invited can join this meeting. Ask its maker to invite you.');
-      const { m, created, join, invited } = await startRoom(ctx, tx, { channelId: a.channelId, title: a.title, caller, kind: a.kind });
+      const { m, created, join, invited } = await startRoom(ctx, tx, { channelId: a.channelId, title: a.title, caller, kind: a.kind, origin: req.origin });
       const fresh = (await loadMeeting(tx, m.id)) ?? m;
       return json(OpenMeetingSpaceResponse.parse({ meeting: toMeeting(fresh), created, join, invited, channelId: a.channelId }));
     }),

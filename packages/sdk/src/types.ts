@@ -170,6 +170,11 @@ export interface HttpRequest {
   headers: Record<string, string | undefined>;
   /** Client address as the server sees it (honours the server's trustProxy setting). */
   ip: string;
+  /**
+   * The origin the request came in on (`https://site.example`, `http://10.0.0.5:3000`), from the scheme and host the server believes (they follow the
+   * `x-forwarded-*` headers only from the proxies `MANYTHREADS_TRUST_PROXY` names). Absent when that is not a plain `http(s)://host[:port]`.
+   */
+  origin?: string;
   /** The authenticated caller, or null on a public route reached anonymously. */
   caller: HttpCaller | null;
   /**
